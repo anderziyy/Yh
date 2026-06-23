@@ -1,0 +1,324 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local NOME_ALVO = "Conveyor"
+local CF_ORIGINAL_ESPERADO = CFrame.new(18.0236549, 7.54272556, -40.5097961, -1, 0, 0, 0, 1, 0, 0, 0, -1)
+local MARGEM_PRECISAO = 0.001
+
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local UpdateSpeed = Remotes:WaitForChild("UpdateSpeed")
+local Config = require(ReplicatedStorage:WaitForChild("Config"))
+
+local ativo = false
+local conexaoLoop = nil
+local conexaoSeguir = nil
+local ultimoTempo = 0
+local arrastando = false
+local dif = Vector2.zero
+local aberto = false
+local pecaAlvo = nil
+local localOriginalDaPeca = nil
+local modeloPaiOriginal = nil
+local objetoParaRemover = nil
+local guiFilhos = {}
+local replicaLocal = nil
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ModGanhoSpeed_ConveyorUnico"
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder = 99999
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+local Botao = Instance.new("TextButton")
+Botao.Size = UDim2.new(0,52,0,52)
+Botao.Position = UDim2.new(0.02,0,0.32,0)
+Botao.BackgroundColor3 = Color3.fromRGB(20,25,35)
+Botao.BorderSizePixel = 0
+Botao.Text = "🚶"
+Botao.Font = Enum.Font.GothamBlack
+Botao.TextSize = 23
+Botao.TextColor3 = Color3.new(1,1,1)
+Botao.AutoLocalize = false
+Botao.Parent = ScreenGui
+local c1 = Instance.new("UICorner") c1.CornerRadius = UDim.new(0,12) c1.Parent = Botao
+local s1 = Instance.new("UIStroke") s1.Color = Color3.fromRGB(75,170,250) s1.Thickness = 1.4 s1.Parent = Botao
+
+local Menu = Instance.new("Frame")
+Menu.Size = UDim2.new(0,280,0,150)
+Menu.Position = UDim2.new(0.5,0,0.5,0)
+Menu.AnchorPoint = Vector2.new(0.5,0.5)
+Menu.BackgroundColor3 = Color3.fromRGB(14,16,22)
+Menu.BorderSizePixel = 0
+Menu.Visible = false
+Menu.Active = true
+Menu.Parent = ScreenGui
+local c2 = Instance.new("UICorner") c2.CornerRadius = UDim.new(0,12) c2.Parent = Menu
+local s2 = Instance.new("UIStroke") s2.Color = Color3.fromRGB(75,170,250) s2.Thickness = 1.6 s2.Transparency = .2 s2.Parent = Menu
+
+local Titulo = Instance.new("TextLabel")
+Titulo.Size = UDim2.new(1,-30,0,34)
+Titulo.Position = UDim2.new(0,8,0,4)
+Titulo.BackgroundTransparency = 1
+Titulo.Text = "🚶 SPEED + CONVEYOR ÚNICO"
+Titulo.Font = Enum.Font.GothamBold
+Titulo.TextSize = 16
+Titulo.TextColor3 = Color3.fromRGB(110,200,255)
+Titulo.Parent = Menu
+
+local Fechar = Instance.new("TextButton")
+Fechar.Size = UDim2.new(0,24,0,24)
+Fechar.Position = UDim2.new(1,-30,0,5)
+Fechar.BackgroundColor3 = Color3.fromRGB(175,35,35)
+Fechar.Text = "✕"
+Fechar.Font = Enum.Font.GothamBold
+Fechar.TextSize = 13
+Fechar.TextColor3 = Color3.new(1,1,1)
+Fechar.Parent = Menu
+Instance.new("UICorner",Fechar).CornerRadius = UDim.new(0,6)
+
+local Toggle = Instance.new("TextButton")
+Toggle.Size = UDim2.new(0.84,0,0,46)
+Toggle.Position = UDim2.new(0.08,0,0.42,0)
+Toggle.BackgroundColor3 = Color3.fromRGB(45,48,58)
+Toggle.Text = "🔘  OFF"
+Toggle.Font = Enum.Font.GothamBold
+Toggle.TextSize = 15
+Toggle.TextColor3 = Color3.new(1,1,1)
+Toggle.AutoLocalize = false
+Toggle.Parent = Menu
+Instance.new("UICorner",Toggle).CornerRadius = UDim.new(0,9)
+
+local Info = Instance.new("TextLabel")
+Info.Size = UDim2.new(1,0,0,18)
+Info.Position = UDim2.new(0,0,0.84,0)
+Info.BackgroundTransparency = 1
+Info.Text = "✅ Réplica no lugar • Remove apenas o alvo • Tudo volta normal"
+Info.Font = Enum.Font.Gotham
+Info.TextSize = 11
+Info.TextColor3 = Color3.fromRGB(140,145,160)
+Info.Parent = Menu
+
+Botao.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then
+        arrastando = true
+        dif = Vector2.new(i.Position.X,i.Position.Y) - Botao.AbsolutePosition
+    end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if arrastando and i.UserInputType == Enum.UserInputType.MouseMovement then
+        local p = Vector2.new(i.Position.X,i.Position.Y)-dif
+        Botao.Position = UDim2.new(0,p.X,0,p.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then arrastando = false end
+end)
+
+local function alternar()
+    if arrastando then return end
+    aberto = not aberto
+    if aberto then
+        Menu.Visible = true
+        Menu.Size = UDim2.new(0,200,0,100)
+        Menu.BackgroundTransparency = 1
+        TweenService:Create(Menu,TweenInfo.new(.22,Enum.EasingStyle.Quad),{Size=UDim2.new(0,280,0,150),BackgroundTransparency=0}):Play()
+    else
+        TweenService:Create(Menu,TweenInfo.new(.18),{Size=UDim2.new(0,200,0,100),BackgroundTransparency=1}):Play()
+        task.delay(.18,function() Menu.Visible = false end)
+    end
+end
+Botao.MouseButton1Click:Connect(alternar)
+Fechar.MouseButton1Click:Connect(alternar)
+
+local function cframeIgual(cf1, cf2)
+    local posDif = (cf1.Position - cf2.Position).Magnitude
+    local _, _, _, r00,r01,r02,r10,r11,r12,r20,r21,r22 = cf1:GetComponents()
+    local _, _, _, s00,s01,s02,s10,s11,s12,s20,s21,s22 = cf2:GetComponents()
+    if posDif > MARGEM_PRECISAO then return false end
+    return math.abs(r00-s00)<MARGEM_PRECISAO and math.abs(r01-s01)<MARGEM_PRECISAO and math.abs(r02-s02)<MARGEM_PRECISAO
+       and math.abs(r10-s10)<MARGEM_PRECISAO and math.abs(r11-s11)<MARGEM_PRECISAO and math.abs(r12-s12)<MARGEM_PRECISAO
+       and math.abs(r20-s20)<MARGEM_PRECISAO and math.abs(r21-s21)<MARGEM_PRECISAO and math.abs(r22-s22)<MARGEM_PRECISAO
+end
+
+local function buscarPecaExata()
+    pecaAlvo = nil
+    modeloPaiOriginal = nil
+    objetoParaRemover = nil
+    replicaLocal = nil
+    guiFilhos = {}
+
+    local todos = workspace:GetDescendants()
+    for _, peca in todos do
+        if peca:IsA("BasePart") and peca.Name == NOME_ALVO and cframeIgual(peca.CFrame, CF_ORIGINAL_ESPERADO) then
+            pecaAlvo = peca
+            localOriginalDaPeca = peca.CFrame
+            modeloPaiOriginal = peca.Parent
+
+            for _, filho in pairs(peca:GetChildren()) do
+                if filho:IsA("ScreenGui") or filho:IsA("SurfaceGui") then
+                    table.insert(guiFilhos, {obj=filho, pai=filho.Parent})
+                    filho.Parent = PlayerGui
+                end
+            end
+
+            if modeloPaiOriginal then
+                objetoParaRemover = modeloPaiOriginal:FindFirstChild("TreadmillBillboard", true)
+            end
+            break
+        end
+    end
+end
+
+local function tornarSegura(peca)
+    if not peca then return end
+    peca.Anchored = true
+    peca.CanCollide = false
+    peca.CanTouch = false
+    peca.CastShadow = false
+    peca.LocalTransparencyModifier = 0
+    peca:SetAttribute("IsConveyor", false)
+end
+
+local function criarReplica()
+    if not pecaAlvo or not modeloPaiOriginal then return end
+    replicaLocal = pecaAlvo:Clone()
+    replicaLocal.Parent = modeloPaiOriginal
+    replicaLocal.CFrame = localOriginalDaPeca
+    replicaLocal.CanCollide = true
+    replicaLocal.CanTouch = true
+    if objetoParaRemover then
+        local copiaSinal = objetoParaRemover:Clone()
+        copiaSinal.Parent = replicaLocal
+    end
+end
+
+local function restaurarPeca(peca, localOriginal)
+    if not peca or not localOriginal or not modeloPaiOriginal then return end
+    peca.Parent = modeloPaiOriginal
+    peca.CFrame = localOriginal
+    peca.CanCollide = true
+    peca.CanTouch = true
+    peca:SetAttribute("IsConveyor", nil)
+    if objetoParaRemover and not objetoParaRemover.Parent then
+        objetoParaRemover.Parent = modeloPaiOriginal
+    end
+    for _, info in pairs(guiFilhos) do
+        if info.obj and info.obj.Parent then
+            info.obj.Parent = peca
+        end
+    end
+    guiFilhos = {}
+    if replicaLocal then
+        replicaLocal:Destroy()
+        replicaLocal = nil
+    end
+end
+
+local function pararMod()
+    ativo = false
+    Toggle.Text = "🔘  OFF"
+    Toggle.BackgroundColor3 = Color3.fromRGB(45,48,58)
+    s1.Color = Color3.fromRGB(75,170,250)
+    s2.Color = Color3.fromRGB(75,170,250)
+    if conexaoLoop then conexaoLoop:Disconnect() conexaoLoop = nil end
+    if conexaoSeguir then conexaoSeguir:Disconnect() conexaoSeguir = nil end
+    local char = LocalPlayer.Character
+    if char then
+        char:SetAttribute("IsOnTreadmill", false)
+        local hum = char:FindFirstChildWhichIsA("Humanoid")
+        if hum then hum.PlatformStand = false end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            if hrp:FindFirstChild("BodyPosition") then hrp:FindFirstChild("BodyPosition"):Destroy() end
+            hrp.Velocity = Vector3.new(0,hrp.Velocity.Y,0)
+        end
+    end
+    if pecaAlvo and localOriginalDaPeca and modeloPaiOriginal then
+        restaurarPeca(pecaAlvo, localOriginalDaPeca)
+    end
+    pecaAlvo = nil
+    modeloPaiOriginal = nil
+    localOriginalDaPeca = nil
+    objetoParaRemover = nil
+end
+
+local function iniciarMod()
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local hum = char:WaitForChild("Humanoid", 10)
+    local hrp = char:WaitForChild("HumanoidRootPart", 10)
+    if not hum or not hrp then return end
+    ultimoTempo = os.clock()
+    ativo = true
+    Toggle.Text = "🟢  ON"
+    Toggle.BackgroundColor3 = Color3.fromRGB(18,135,55)
+    s1.Color = Color3.fromRGB(55,240,120)
+    s2.Color = Color3.fromRGB(55,240,120)
+    char:SetAttribute("IsOnTreadmill", true)
+    buscarPecaExata()
+    if not pecaAlvo or not modeloPaiOriginal then
+        Info.Text = "⚠️ Peça / Modelo não encontrado"
+        pararMod()
+        return
+    end
+    criarReplica()
+    if objetoParaRemover and objetoParaRemover.Parent then
+        objetoParaRemover.Parent = nil
+    end
+    tornarSegura(pecaAlvo)
+    Info.Text = "✅ Ativo • Réplica no lugar • Sem sinal da esteira"
+    local posFixo = hrp.Position
+    conexaoLoop = RunService.Heartbeat:Connect(function()
+        if not ativo or not hum or hum.Health <= 0 or not char or not char.Parent then
+            pararMod()
+            return
+        end
+        if hum.MoveDirection.Magnitude > 0.05 then
+            posFixo = hrp.Position
+            ultimoTempo = os.clock()
+            UpdateSpeed:FireServer("Walking")
+            return
+        end
+        local agora = os.clock()
+        local baseXP = Config.XP_TIME_BASED
+        local simulaVelocidade = 1
+        local tempoEspera = baseXP.MAX_COOLDOWN - simulaVelocidade * (baseXP.MAX_COOLDOWN - baseXP.MIN_COOLDOWN)
+        local deslocamento = math.sin(agora * 2.5) * 0.03
+        hrp.Position = Vector3.new(posFixo.X + deslocamento, hrp.Position.Y, posFixo.Z)
+        if tempoEspera <= (agora - ultimoTempo) then
+            ultimoTempo = agora
+            UpdateSpeed:FireServer("Walking")
+        end
+    end)
+    conexaoSeguir = RunService.Heartbeat:Connect(function()
+        if not ativo or not hrp or not hrp.Parent or not pecaAlvo then return end
+        local posAlvo = hrp.Position + Vector3.new(0, -1.2, 0)
+        pecaAlvo.CFrame = CFrame.new(posAlvo, hrp.Position + hrp.CFrame.LookVector * 5)
+    end)
+end
+
+Toggle.MouseButton1Click:Connect(function()
+    if ativo then pararMod() else iniciarMod() end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    pararMod()
+    task.wait(0.3)
+    buscarPecaExata()
+end)
+
+UserInputService.InputBegan:Connect(function(i,g)
+    if g then return end
+    if i.KeyCode == Enum.KeyCode.Insert then alternar() end
+end)
+
+task.spawn(function()
+    task.wait(0.5)
+    buscarPecaExata()
+    if pecaAlvo then Info.Text = "🔍 Peça pronta — tudo preparado" end
+end)
