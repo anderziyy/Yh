@@ -2354,6 +2354,7 @@ local trainSpeedReplica = nil
 local trainSpeedSpecialPart = nil
 local trainSpeedUpdateRemote = nil
 local trainSpeedConfig = nil
+local trainSpeedMoveBufferUntil = 0
 
 local function getTrainSpeedRemote()
     if not trainSpeedUpdateRemote then
@@ -2427,6 +2428,27 @@ local function makeTrainSpeedPartSafe(part)
     part:SetAttribute("IsConveyor", false)
 end
 
+local function isTrainSpeedCharacterMoving(hum, hrp)
+    if hum and hum.MoveDirection.Magnitude > 0.05 then
+        return true
+    end
+    if hrp then
+        local velocity = hrp.AssemblyLinearVelocity
+        local horizontalSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+        return horizontalSpeed > 2
+    end
+    return false
+end
+
+local function getTrainSpeedPartCFrame(hrp, hum)
+    local yOffset = -4.5
+    if isTrainSpeedCharacterMoving(hum, hrp) or os.clock() < trainSpeedMoveBufferUntil then
+        yOffset = -10
+    end
+    local targetPosition = hrp.Position + Vector3.new(0, yOffset, 0)
+    return CFrame.new(targetPosition, targetPosition + hrp.CFrame.LookVector * 5)
+end
+
 local function createTrainSpeedReplica()
     if not trainSpeedTargetPart or not trainSpeedOriginalParent then return end
     trainSpeedReplica = trainSpeedTargetPart:Clone()
@@ -2489,8 +2511,8 @@ local function processTrainSpeedSpecialModel(model)
             clearTrainSpeedSpecialPart()
             return
         end
-        local targetPosition = hrp.Position + Vector3.new(0, -1.2, 0)
-        trainSpeedSpecialPart.CFrame = CFrame.new(targetPosition, hrp.Position + hrp.CFrame.LookVector * 5)
+        local hum = Player.Character and Player.Character:FindFirstChildWhichIsA("Humanoid")
+        trainSpeedSpecialPart.CFrame = getTrainSpeedPartCFrame(hrp, hum)
     end)
     model.Destroying:Connect(clearTrainSpeedSpecialPart)
 end
@@ -2563,16 +2585,22 @@ local function startTrainSpeedMod()
     end
     makeTrainSpeedPartSafe(trainSpeedTargetPart)
     local fixedPosition = hrp.Position
+    trainSpeedMoveBufferUntil = 0
     startTrainSpeedSpecialMonitoring()
     trainSpeedLoopConnection = RunService.Heartbeat:Connect(function()
         if not autoTrainSpeedActive or not hum or hum.Health <= 0 or not char or not char.Parent then
             stopTrainSpeedMod()
             return
         end
-        if hum.MoveDirection.Magnitude > 0.05 then
+        if isTrainSpeedCharacterMoving(hum, hrp) then
             fixedPosition = hrp.Position
+            trainSpeedMoveBufferUntil = os.clock() + 0.3
             trainSpeedLastTime = os.clock()
             updateRemote:FireServer("Walking")
+            return
+        end
+        if os.clock() < trainSpeedMoveBufferUntil then
+            fixedPosition = hrp.Position
             return
         end
         local now = os.clock()
@@ -2588,8 +2616,7 @@ local function startTrainSpeedMod()
     end)
     trainSpeedFollowConnection = RunService.Heartbeat:Connect(function()
         if not autoTrainSpeedActive or not hrp or not hrp.Parent or not trainSpeedTargetPart then return end
-        local targetPosition = hrp.Position + Vector3.new(0, -1.2, 0)
-        trainSpeedTargetPart.CFrame = CFrame.new(targetPosition, hrp.Position + hrp.CFrame.LookVector * 5)
+        trainSpeedTargetPart.CFrame = getTrainSpeedPartCFrame(hrp, hum)
     end)
 end
 
@@ -2618,38 +2645,6 @@ createOption("Auto Train Speed", false, "Main", function(state)
     end
 end)
 
-createCategory("Farm", "Unlock Trophy Areas", "18155313082")
-
-createOption("Unlock Areas", false, "Farm", function(state)
-    autoUnlockAreasActive = state
-    if state then
-        task.spawn(function()
-            while autoUnlockAreasActive do
-                local selectedWorld = optionStates["TrophyWorldSelector"]
-                if selectedWorld then
-                    local baseNum = (selectedWorld - 1) * 100 + 101
-                    for offset = 0, 10 do
-                        if not autoUnlockAreasActive then break end
-                        pcall(function()
-                            local args = {
-                                [1] = "RecordVictory",
-                                [2] = baseNum + offset
-                            }
-                            game:GetService("ReplicatedStorage"):WaitForChild("Remote"):WaitForChild("Battle"):FireServer(unpack(args))
-                        end)
-                        task.wait(0.1)
-                    end
-                    task.wait(0.2)
-                else
-                    task.wait(0.5)
-                end
-            end
-        end)
-    end
-end)
-
-createWorldSelector("Farm", "TrophyWorldSelector", "Select World")
-
 createCategory("Farm", "Trophy Farm", "130626492867162")
 
 createOption("Auto Farm Trophy", false, "Farm", function(state)
@@ -2675,7 +2670,7 @@ createOption("Auto Farm Trophy", false, "Farm", function(state)
     end
 end)
 
-createWorldSelector("Farm", "TrophyFarmWorldSelector", "Select World")
+createWorldSelector("Farm", "TrophyFarmWorldSelector", "Select Area")
 
 createCategory("Auto Buy", "Shop", "129977800846764")
 
@@ -2685,6 +2680,9 @@ local blockedShopNotificationTexts = {
 }
 
 local function hideShopNotificationLabels()
+    if not autoBuyItemsActive then
+        return
+    end
     for _, descendant in ipairs(PlayerGui:GetDescendants()) do
         if descendant.Name == "GeneralNotificationFrame" then
             pcall(function() descendant:Destroy() end)
@@ -2699,6 +2697,9 @@ end
 
 PlayerGui.DescendantAdded:Connect(function(descendant)
     task.defer(function()
+        if not autoBuyItemsActive then
+            return
+        end
         if descendant.Name == "GeneralNotificationFrame" then
             pcall(function() descendant:Destroy() end)
         elseif descendant:IsA("TextLabel") and descendant.Name == "Text" and blockedShopNotificationTexts[descendant.Text] then
