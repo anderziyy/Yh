@@ -9,6 +9,7 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local NOME_ALVO = "Conveyor"
 local CF_ORIGINAL_ESPERADO = CFrame.new(18.0236549, 7.54272556, -40.5097961, -1, 0, 0, 0, 1, 0, 0, 0, -1)
 local MARGEM_PRECISAO = 0.001
+local NOME_MODELO_ESPECIAL = "HourlyTreadmill_Active"
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local UpdateSpeed = Remotes:WaitForChild("UpdateSpeed")
@@ -17,6 +18,7 @@ local Config = require(ReplicatedStorage:WaitForChild("Config"))
 local ativo = false
 local conexaoLoop = nil
 local conexaoSeguir = nil
+local conexaoEspecial = nil
 local ultimoTempo = 0
 local arrastando = false
 local dif = Vector2.zero
@@ -27,6 +29,8 @@ local modeloPaiOriginal = nil
 local objetoParaRemover = nil
 local guiFilhos = {}
 local replicaLocal = nil
+local pecaEspecial = nil
+local conexaoSeguirEspecial = nil
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ModGanhoSpeed_ConveyorUnico"
@@ -220,6 +224,50 @@ local function restaurarPeca(peca, localOriginal)
     end
 end
 
+local function limparPecaEspecial()
+    if pecaEspecial then
+        if conexaoSeguirEspecial then conexaoSeguirEspecial:Disconnect() conexaoSeguirEspecial = nil end
+        pecaEspecial:Destroy()
+        pecaEspecial = nil
+    end
+end
+
+local function processarEsteiraEspecial(modelo)
+    if not ativo or not modelo or not modelo:IsDescendantOf(workspace) then return end
+    local convEspecial = modelo:FindFirstChild(NOME_ALVO, true)
+    local billEspecial = modelo:FindFirstChild("TreadmillBillboard", true)
+    if billEspecial then billEspecial:Destroy() end
+    if not convEspecial or not convEspecial:IsA("BasePart") then return end
+    limparPecaEspecial()
+    tornarSegura(convEspecial)
+    pecaEspecial = convEspecial
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    conexaoSeguirEspecial = RunService.Heartbeat:Connect(function()
+        if not ativo or not hrp or not hrp.Parent or not pecaEspecial or not pecaEspecial:IsDescendantOf(workspace) then
+            limparPecaEspecial()
+            return
+        end
+        local posAlvo = hrp.Position + Vector3.new(0, -1.2, 0)
+        pecaEspecial.CFrame = CFrame.new(posAlvo, hrp.Position + hrp.CFrame.LookVector * 5)
+    end)
+    modelo.Destroying:Connect(limparPecaEspecial)
+end
+
+local function iniciarMonitoramentoEspecial()
+    if conexaoEspecial then return end
+    conexaoEspecial = RunService.Heartbeat:Connect(function()
+        if not ativo then
+            if conexaoEspecial then conexaoEspecial:Disconnect() conexaoEspecial = nil end
+            return
+        end
+        local encontrado = workspace:FindFirstChild(NOME_MODELO_ESPECIAL, true)
+        if encontrado then
+            processarEsteiraEspecial(encontrado)
+        end
+    end)
+end
+
 local function pararMod()
     ativo = false
     Toggle.Text = "🔘  OFF"
@@ -228,6 +276,8 @@ local function pararMod()
     s2.Color = Color3.fromRGB(75,170,250)
     if conexaoLoop then conexaoLoop:Disconnect() conexaoLoop = nil end
     if conexaoSeguir then conexaoSeguir:Disconnect() conexaoSeguir = nil end
+    if conexaoEspecial then conexaoEspecial:Disconnect() conexaoEspecial = nil end
+    limparPecaEspecial()
     local char = LocalPlayer.Character
     if char then
         char:SetAttribute("IsOnTreadmill", false)
@@ -273,6 +323,7 @@ local function iniciarMod()
     tornarSegura(pecaAlvo)
     Info.Text = "✅ Ativo • Réplica no lugar • Sem sinal da esteira"
     local posFixo = hrp.Position
+    iniciarMonitoramentoEspecial()
     conexaoLoop = RunService.Heartbeat:Connect(function()
         if not ativo or not hum or hum.Health <= 0 or not char or not char.Parent then
             pararMod()
