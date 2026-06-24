@@ -540,14 +540,6 @@ local function getDropdownPadding()
     return math.max(1, math.floor(getContentPadding() * 0.5 + 0.5))
 end
 
-local function getDropdownContentHeight(count)
-    return (count * getOptionFrameHeight()) + (math.max(count - 1, 0) * getDropdownPadding())
-end
-
-local function getDropdownVisibleHeight(count, maxVisible)
-    return getDropdownContentHeight(math.min(count, maxVisible))
-end
-
 ContentListLayout.Padding = UDim.new(0, getContentPadding())
 
 local function refreshMainCanvas()
@@ -788,83 +780,6 @@ local function createTab(name, iconId, position)
 end
 
 local optionCounter = 0
-
-local function createSearchToggleOption(name, tabName, isEnabled, toggleCallback)
-    optionCounter = optionCounter + 1
-
-    local Container = Instance.new("Frame")
-    Container.Size = getOptionFrameSize()
-    Container.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-    Container.Parent = MainContent
-    Container.Name = tostring(optionCounter)
-    Container.LayoutOrder = optionCounter
-    Container.ZIndex = 999999
-    Container.Visible = false
-
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, rpx(0))
-    UICorner.Parent = Container
-
-    local ContainerStroke = Instance.new("UIStroke")
-    ContainerStroke.Color = Color3.fromRGB(60, 60, 60)
-    ContainerStroke.Thickness = 0
-    ContainerStroke.Parent = Container
-
-    local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(0.62, 0, 1, 0)
-    Label.Position = UDim2.new(0.05, 0, 0, 0)
-    Label.Text = name
-    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Label.BackgroundTransparency = 1
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Font = Enum.Font.SourceSans
-    Label.TextSize = rpx(23)
-    Label.Parent = Container
-    Label.ZIndex = 999999
-
-    local SwitchBG = Instance.new("TextButton")
-    SwitchBG.Size = UDim2.new(0.15, 0, 0.45, 0)
-    SwitchBG.Position = UDim2.new(0.8, 0, 0.275, 0)
-    SwitchBG.BackgroundColor3 = isEnabled() and Color3.fromRGB(100, 150, 200) or Color3.fromRGB(40, 40, 40)
-    SwitchBG.Text = ""
-    SwitchBG.Parent = Container
-    SwitchBG.AutoButtonColor = false
-    SwitchBG.ZIndex = 999999
-
-    local SwitchCorner = Instance.new("UICorner")
-    SwitchCorner.CornerRadius = UDim.new(0, rpx(0))
-    SwitchCorner.Parent = SwitchBG
-
-    local SwitchStroke = Instance.new("UIStroke")
-    SwitchStroke.Color = Color3.fromRGB(60, 60, 60)
-    SwitchStroke.Thickness = 1
-    SwitchStroke.Parent = SwitchBG
-
-    local Circle = Instance.new("Frame")
-    Circle.Size = UDim2.new(0.38, 0, 0.76, 0)
-    Circle.Position = isEnabled() and UDim2.new(0.56, 0, 0.12, 0) or UDim2.new(0.06, 0, 0.12, 0)
-    Circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Circle.Parent = SwitchBG
-    Circle.ZIndex = 999999
-
-    local CircleCorner = Instance.new("UICorner")
-    CircleCorner.CornerRadius = UDim.new(0, rpx(0))
-    CircleCorner.Parent = Circle
-
-    local function refresh()
-        SwitchBG.BackgroundColor3 = isEnabled() and Color3.fromRGB(100, 150, 200) or Color3.fromRGB(40, 40, 40)
-        Circle.Position = isEnabled() and UDim2.new(0.56, 0, 0.12, 0) or UDim2.new(0.06, 0, 0.12, 0)
-    end
-
-    SwitchBG.Activated:Connect(function()
-        toggleCallback()
-        refresh()
-    end)
-
-    searchOnlyElements[Container] = true
-    registerElement(tabName, Container, name)
-    return refresh
-end
 
 local function createCategory(tabName, categoryName, iconId)
     if not tabs[tabName] then
@@ -1564,515 +1479,6 @@ local function createWorldSelector(tabName, stateName, labelText, callback)
     registerElement(tabName, MainContainer, labelText)
 end
 
-local function createEggQuantitySelector(tabName, stateName, labelText)
-    optionCounter = optionCounter + 1
-
-    createOptionState(stateName, nil)
-    if optionStates[stateName] ~= 1 and optionStates[stateName] ~= 3 then
-        optionStates[stateName] = nil
-    end
-    local isOpen = false
-
-    local MainContainer = Instance.new("Frame")
-    MainContainer.Size = getOptionFrameSize()
-    MainContainer.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-    MainContainer.Parent = MainContent
-    MainContainer.Name = tostring(optionCounter)
-    MainContainer.LayoutOrder = optionCounter
-    MainContainer.ZIndex = 999999
-    MainContainer.Visible = (tabName == activeTab)
-
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, rpx(0))
-    UICorner.Parent = MainContainer
-
-    local ContainerStroke = Instance.new("UIStroke")
-    ContainerStroke.Color = Color3.fromRGB(60, 60, 60)
-    ContainerStroke.Thickness = 0
-    ContainerStroke.Parent = MainContainer
-
-    local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(0.58, 0, 1, 0)
-    Label.Position = UDim2.new(0.05, 0, 0, 0)
-    Label.Text = labelText
-    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Label.BackgroundTransparency = 1
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Font = Enum.Font.SourceSans
-    Label.TextSize = rpx(23)
-    Label.Parent = MainContainer
-    Label.ZIndex = 999999
-
-    local SelectButton = Instance.new("TextButton")
-    SelectButton.Size = UDim2.new(0.28, 0, 0.58, 0)
-    SelectButton.Position = UDim2.new(0.68, 0, 0.21, 0)
-    SelectButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    SelectButton.Text = "Select..."
-    SelectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    SelectButton.TextSize = rpx(16)
-    SelectButton.Font = Enum.Font.SourceSansBold
-    SelectButton.Parent = MainContainer
-    SelectButton.AutoButtonColor = false
-    SelectButton.ZIndex = 999999
-
-    local SelectCorner = Instance.new("UICorner")
-    SelectCorner.CornerRadius = UDim.new(0, rpx(0))
-    SelectCorner.Parent = SelectButton
-
-    local SelectStroke = Instance.new("UIStroke")
-    SelectStroke.Color = Color3.fromRGB(70, 70, 70)
-    SelectStroke.Thickness = 1
-    SelectStroke.Parent = SelectButton
-
-    local SidePanel = Instance.new("Frame")
-    SidePanel.Name = stateName .. "Panel"
-    SidePanel.Size = UDim2.new(0.62, 0, 0.72, 0)
-    SidePanel.Position = UDim2.new(0.36, 0, 0.1, 0)
-    SidePanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    SidePanel.BorderSizePixel = 0
-    SidePanel.Parent = ContentContainer
-    SidePanel.ZIndex = 1000004
-    SidePanel.Visible = false
-    SidePanel.ClipsDescendants = true
-
-    local SidePanelCorner = Instance.new("UICorner")
-    SidePanelCorner.CornerRadius = UDim.new(0, rpx(0))
-    SidePanelCorner.Parent = SidePanel
-
-    local SidePanelStroke = Instance.new("UIStroke")
-    SidePanelStroke.Color = Color3.fromRGB(110, 110, 110)
-    SidePanelStroke.Thickness = 1
-    SidePanelStroke.Parent = SidePanel
-
-    local OptionScroll = Instance.new("ScrollingFrame")
-    OptionScroll.Name = "OptionsScroll"
-    OptionScroll.Size = UDim2.new(1, -rpx(8), 1, -rpx(8))
-    OptionScroll.Position = UDim2.new(0, rpx(4), 0, rpx(4))
-    OptionScroll.BackgroundTransparency = 1
-    OptionScroll.BorderSizePixel = 0
-    OptionScroll.Parent = SidePanel
-    OptionScroll.ZIndex = 1000005
-    OptionScroll.ScrollBarThickness = 2
-    OptionScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    OptionScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    OptionScroll.ClipsDescendants = true
-
-    local OptionListLayout = Instance.new("UIListLayout")
-    OptionListLayout.Padding = UDim.new(0, getDropdownPadding())
-    OptionListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    OptionListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    OptionListLayout.VerticalFlex = Enum.UIFlexAlignment.None
-    OptionListLayout.Parent = OptionScroll
-
-    local function setPanelVisible(visible)
-        isOpen = visible and activeTab == tabName and MainContainer.Visible
-        SidePanel.Visible = isOpen
-    end
-
-    local quantityOptions = {
-        {name = "Open 1", value = 1},
-        {name = "Open 3", value = 3},
-    }
-    local optionControls = {}
-    local namesByValue = {}
-
-    for _, quantityOption in ipairs(quantityOptions) do
-        namesByValue[quantityOption.value] = quantityOption.name
-    end
-
-    local function updateSwitch(switchButton, switchCircle, active, animated)
-        switchButton.BackgroundColor3 = active and Color3.fromRGB(100, 150, 200) or Color3.fromRGB(40, 40, 40)
-        local targetPosition = active and UDim2.new(0.56, 0, 0.12, 0) or UDim2.new(0.06, 0, 0.12, 0)
-        if animated then
-            switchCircle:TweenPosition(targetPosition, "Out", "Quad", 0.2, true)
-        else
-            switchCircle.Position = targetPosition
-        end
-    end
-
-    local function refreshSelection(animated)
-        local selectedValue = optionStates[stateName]
-        SelectButton.Text = namesByValue[selectedValue] or "Select..."
-
-        for _, controls in ipairs(optionControls) do
-            updateSwitch(controls.switchButton, controls.switchCircle, selectedValue == controls.value, animated)
-        end
-    end
-
-    for i, quantityOption in ipairs(quantityOptions) do
-        local OptionBox = Instance.new("Frame")
-        OptionBox.Size = UDim2.new(1, -rpx(2), 0, getOptionFrameHeight())
-        OptionBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-        OptionBox.Parent = OptionScroll
-        OptionBox.ZIndex = 1000006
-        OptionBox.LayoutOrder = i
-
-        local OptionCorner = Instance.new("UICorner")
-        OptionCorner.CornerRadius = UDim.new(0, rpx(0))
-        OptionCorner.Parent = OptionBox
-
-        local OptionStroke = Instance.new("UIStroke")
-        OptionStroke.Color = Color3.fromRGB(110, 110, 110)
-        OptionStroke.Thickness = 1
-        OptionStroke.Parent = OptionBox
-
-        local OptionLabel = Instance.new("TextLabel")
-        OptionLabel.Size = UDim2.new(0.62, 0, 1, 0)
-        OptionLabel.Position = UDim2.new(0.05, 0, 0, 0)
-        OptionLabel.Text = quantityOption.name
-        OptionLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        OptionLabel.BackgroundTransparency = 1
-        OptionLabel.TextXAlignment = Enum.TextXAlignment.Left
-        OptionLabel.Font = Enum.Font.SourceSans
-        OptionLabel.TextSize = rpx(23)
-        OptionLabel.Parent = OptionBox
-        OptionLabel.ZIndex = 1000007
-
-        local OptionSwitch = Instance.new("TextButton")
-        OptionSwitch.Name = "OptionSwitch"
-        OptionSwitch.Size = UDim2.new(0.15, 0, 0.45, 0)
-        OptionSwitch.Position = UDim2.new(0.8, 0, 0.275, 0)
-        OptionSwitch.Text = ""
-        OptionSwitch.Parent = OptionBox
-        OptionSwitch.AutoButtonColor = false
-        OptionSwitch.ZIndex = 1000007
-
-        local OptionSwitchCorner = Instance.new("UICorner")
-        OptionSwitchCorner.CornerRadius = UDim.new(0, rpx(0))
-        OptionSwitchCorner.Parent = OptionSwitch
-
-        local OptionSwitchStroke = Instance.new("UIStroke")
-        OptionSwitchStroke.Color = Color3.fromRGB(60, 60, 60)
-        OptionSwitchStroke.Thickness = 1
-        OptionSwitchStroke.Parent = OptionSwitch
-
-        local OptionCircle = Instance.new("Frame")
-        OptionCircle.Name = "OptionCircle"
-        OptionCircle.Size = UDim2.new(0.38, 0, 0.76, 0)
-        OptionCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        OptionCircle.Parent = OptionSwitch
-        OptionCircle.ZIndex = 1000008
-
-        local OptionCircleCorner = Instance.new("UICorner")
-        OptionCircleCorner.CornerRadius = UDim.new(0, rpx(0))
-        OptionCircleCorner.Parent = OptionCircle
-
-        optionControls[i] = {value = quantityOption.value, switchButton = OptionSwitch, switchCircle = OptionCircle}
-        refreshSelection(false)
-
-        local function toggleOption()
-            if createDebounce(quantityOption.name, 0.05) then
-                if optionStates[stateName] == quantityOption.value then
-                    optionStates[stateName] = nil
-                else
-                    optionStates[stateName] = quantityOption.value
-                end
-                setOptionState(stateName, optionStates[stateName])
-                refreshSelection(true)
-                return true
-            end
-            return false
-        end
-
-        OptionSwitch.Activated:Connect(toggleOption)
-
-        OptionBox.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                toggleOption()
-            end
-        end)
-    end
-
-    SelectButton.Activated:Connect(function()
-        if createDebounce(stateName .. "Dropdown", 0.05) then
-            setPanelVisible(not isOpen)
-        end
-    end)
-
-    MainContainer:GetPropertyChangedSignal("Visible"):Connect(function()
-        if not MainContainer.Visible then
-            setPanelVisible(false)
-        end
-    end)
-
-    UserInputService.InputBegan:Connect(function(input)
-        if not isOpen then
-            return
-        end
-
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            local position = input.Position
-            if not isPointInsideGui(SidePanel, position) and not isPointInsideGui(SelectButton, position) then
-                setPanelVisible(false)
-            end
-        end
-    end)
-
-    registerElement(tabName, MainContainer, labelText)
-end
-
-local function createEggSelector(tabName, stateName, labelText)
-    optionCounter = optionCounter + 1
-
-    createOptionState(stateName, nil)
-    local selectedEgg = optionStates[stateName]
-    local isOpen = false
-
-    local MainContainer = Instance.new("Frame")
-    MainContainer.Size = getOptionFrameSize()
-    MainContainer.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-    MainContainer.Parent = MainContent
-    MainContainer.Name = tostring(optionCounter)
-    MainContainer.LayoutOrder = optionCounter
-    MainContainer.ZIndex = 999999
-    MainContainer.Visible = (tabName == activeTab)
-
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, rpx(0))
-    UICorner.Parent = MainContainer
-
-    local ContainerStroke = Instance.new("UIStroke")
-    ContainerStroke.Color = Color3.fromRGB(60, 60, 60)
-    ContainerStroke.Thickness = 0
-    ContainerStroke.Parent = MainContainer
-
-    local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(0.58, 0, 1, 0)
-    Label.Position = UDim2.new(0.05, 0, 0, 0)
-    Label.Text = labelText
-    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Label.BackgroundTransparency = 1
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Font = Enum.Font.SourceSans
-    Label.TextSize = rpx(23)
-    Label.Parent = MainContainer
-    Label.ZIndex = 999999
-
-    local SelectButton = Instance.new("TextButton")
-    SelectButton.Size = UDim2.new(0.28, 0, 0.58, 0)
-    SelectButton.Position = UDim2.new(0.68, 0, 0.21, 0)
-    SelectButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    SelectButton.Text = "Select..."
-    SelectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    SelectButton.TextSize = rpx(16)
-    SelectButton.Font = Enum.Font.SourceSansBold
-    SelectButton.Parent = MainContainer
-    SelectButton.AutoButtonColor = false
-    SelectButton.ZIndex = 999999
-
-    local SelectCorner = Instance.new("UICorner")
-    SelectCorner.CornerRadius = UDim.new(0, rpx(0))
-    SelectCorner.Parent = SelectButton
-
-    local SelectStroke = Instance.new("UIStroke")
-    SelectStroke.Color = Color3.fromRGB(70, 70, 70)
-    SelectStroke.Thickness = 1
-    SelectStroke.Parent = SelectButton
-
-    local SidePanel = Instance.new("Frame")
-    SidePanel.Name = stateName .. "Panel"
-    SidePanel.Size = UDim2.new(0.62, 0, 0.72, 0)
-    SidePanel.Position = UDim2.new(0.36, 0, 0.1, 0)
-    SidePanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    SidePanel.BorderSizePixel = 0
-    SidePanel.Parent = ContentContainer
-    SidePanel.ZIndex = 1000004
-    SidePanel.Visible = false
-    SidePanel.ClipsDescendants = true
-
-    local SidePanelCorner = Instance.new("UICorner")
-    SidePanelCorner.CornerRadius = UDim.new(0, rpx(0))
-    SidePanelCorner.Parent = SidePanel
-
-    local SidePanelStroke = Instance.new("UIStroke")
-    SidePanelStroke.Color = Color3.fromRGB(110, 110, 110)
-    SidePanelStroke.Thickness = 1
-    SidePanelStroke.Parent = SidePanel
-
-    local OptionScroll = Instance.new("ScrollingFrame")
-    OptionScroll.Name = "OptionsScroll"
-    OptionScroll.Size = UDim2.new(1, -rpx(8), 1, -rpx(8))
-    OptionScroll.Position = UDim2.new(0, rpx(4), 0, rpx(4))
-    OptionScroll.BackgroundTransparency = 1
-    OptionScroll.BorderSizePixel = 0
-    OptionScroll.Parent = SidePanel
-    OptionScroll.ZIndex = 1000005
-    OptionScroll.ScrollBarThickness = 2
-    OptionScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    OptionScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    OptionScroll.ClipsDescendants = true
-
-    local OptionListLayout = Instance.new("UIListLayout")
-    OptionListLayout.Padding = UDim.new(0, getDropdownPadding())
-    OptionListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    OptionListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    OptionListLayout.VerticalFlex = Enum.UIFlexAlignment.None
-    OptionListLayout.Parent = OptionScroll
-
-    local function setPanelVisible(visible)
-        isOpen = visible and activeTab == tabName and MainContainer.Visible
-        SidePanel.Visible = isOpen
-    end
-
-    local eggList = {
-        {name = "Plain Egg", price = "$20", id = 101},
-        {name = "Plateau Egg", price = "$1.25K", id = 102},
-        {name = "Glacial Egg", price = "$200K", id = 201},
-        {name = "Ocean Gem Egg", price = "$2M", id = 202},
-        {name = "Sand Egg", price = "$15B", id = 301},
-        {name = "Gravel Egg", price = "$200B", id = 302},
-        {name = "Science fiction Egg", price = "$15Qd", id = 401},
-        {name = "Glitter Egg", price = "$500Qd", id = 402},
-    }
-    local optionControls = {}
-    local eggNamesById = {}
-
-    for _, egg in ipairs(eggList) do
-        eggNamesById[egg.id] = egg.name
-    end
-
-    local function refreshSelection(animated)
-        local selectedEggId = optionStates[stateName]
-        SelectButton.Text = eggNamesById[selectedEggId] or "Select..."
-
-        for _, controls in ipairs(optionControls) do
-            local active = selectedEggId == controls.id
-            controls.switchButton.BackgroundColor3 = active and Color3.fromRGB(100, 150, 200) or Color3.fromRGB(40, 40, 40)
-
-            local targetPosition = active and UDim2.new(0.56, 0, 0.12, 0) or UDim2.new(0.06, 0, 0.12, 0)
-            if animated then
-                controls.switchCircle:TweenPosition(targetPosition, "Out", "Quad", 0.2, true)
-            else
-                controls.switchCircle.Position = targetPosition
-            end
-        end
-    end
-
-    for i, egg in ipairs(eggList) do
-        local OptionBox = Instance.new("Frame")
-        OptionBox.Size = UDim2.new(1, -rpx(2), 0, getOptionFrameHeight())
-        OptionBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-        OptionBox.Parent = OptionScroll
-        OptionBox.ZIndex = 1000006
-        OptionBox.LayoutOrder = i
-
-        local OptionCorner = Instance.new("UICorner")
-        OptionCorner.CornerRadius = UDim.new(0, rpx(0))
-        OptionCorner.Parent = OptionBox
-
-        local OptionStroke = Instance.new("UIStroke")
-        OptionStroke.Color = Color3.fromRGB(110, 110, 110)
-        OptionStroke.Thickness = 1
-        OptionStroke.Parent = OptionBox
-
-        local OptionLabel = Instance.new("TextLabel")
-        OptionLabel.Size = UDim2.new(0.62, 0, 0.6, 0)
-        OptionLabel.Position = UDim2.new(0.05, 0, 0, 0)
-        OptionLabel.Text = egg.name
-        OptionLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        OptionLabel.BackgroundTransparency = 1
-        OptionLabel.TextXAlignment = Enum.TextXAlignment.Left
-        OptionLabel.Font = Enum.Font.SourceSans
-        OptionLabel.TextSize = rpx(20)
-        OptionLabel.Parent = OptionBox
-        OptionLabel.ZIndex = 1000007
-
-        local PriceLabel = Instance.new("TextLabel")
-        PriceLabel.Size = UDim2.new(0.62, 0, 0.4, 0)
-        PriceLabel.Position = UDim2.new(0.05, 0, 0.6, 0)
-        PriceLabel.Text = "Trophy: " .. egg.price
-        PriceLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        PriceLabel.BackgroundTransparency = 1
-        PriceLabel.TextXAlignment = Enum.TextXAlignment.Left
-        PriceLabel.Font = Enum.Font.SourceSans
-        PriceLabel.TextSize = rpx(15)
-        PriceLabel.Parent = OptionBox
-        PriceLabel.ZIndex = 1000007
-
-        local OptionSwitch = Instance.new("TextButton")
-        OptionSwitch.Name = "OptionSwitch"
-        OptionSwitch.Size = UDim2.new(0.15, 0, 0.45, 0)
-        OptionSwitch.Position = UDim2.new(0.8, 0, 0.275, 0)
-        OptionSwitch.Text = ""
-        OptionSwitch.Parent = OptionBox
-        OptionSwitch.AutoButtonColor = false
-        OptionSwitch.ZIndex = 1000007
-
-        local OptionSwitchCorner = Instance.new("UICorner")
-        OptionSwitchCorner.CornerRadius = UDim.new(0, rpx(0))
-        OptionSwitchCorner.Parent = OptionSwitch
-
-        local OptionSwitchStroke = Instance.new("UIStroke")
-        OptionSwitchStroke.Color = Color3.fromRGB(60, 60, 60)
-        OptionSwitchStroke.Thickness = 1
-        OptionSwitchStroke.Parent = OptionSwitch
-
-        local OptionCircle = Instance.new("Frame")
-        OptionCircle.Name = "OptionCircle"
-        OptionCircle.Size = UDim2.new(0.38, 0, 0.76, 0)
-        OptionCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        OptionCircle.Parent = OptionSwitch
-        OptionCircle.ZIndex = 1000008
-
-        local OptionCircleCorner = Instance.new("UICorner")
-        OptionCircleCorner.CornerRadius = UDim.new(0, rpx(0))
-        OptionCircleCorner.Parent = OptionCircle
-
-        optionControls[i] = {id = egg.id, switchButton = OptionSwitch, switchCircle = OptionCircle}
-        refreshSelection(false)
-
-        local function toggleOption()
-            if createDebounce(egg.name, 0.05) then
-                if optionStates[stateName] == egg.id then
-                    optionStates[stateName] = nil
-                else
-                    optionStates[stateName] = egg.id
-                end
-                setOptionState(stateName, optionStates[stateName])
-                refreshSelection(true)
-                return true
-            end
-            return false
-        end
-
-        OptionSwitch.Activated:Connect(toggleOption)
-
-        OptionBox.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                toggleOption()
-            end
-        end)
-    end
-
-    SelectButton.Activated:Connect(function()
-        if createDebounce(stateName .. "Dropdown", 0.05) then
-            setPanelVisible(not isOpen)
-        end
-    end)
-
-    MainContainer:GetPropertyChangedSignal("Visible"):Connect(function()
-        if not MainContainer.Visible then
-            setPanelVisible(false)
-        end
-    end)
-
-    UserInputService.InputBegan:Connect(function(input)
-        if not isOpen then
-            return
-        end
-
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            local position = input.Position
-            if not isPointInsideGui(SidePanel, position) and not isPointInsideGui(SelectButton, position) then
-                setPanelVisible(false)
-            end
-        end
-    end)
-
-    registerElement(tabName, MainContainer, labelText)
-end
-
-
 local function createShopItemSelector(tabName, stateName, labelText)
     optionCounter = optionCounter + 1
 
@@ -2328,10 +1734,7 @@ tabs["Config"] = createTab("Config", "114794077382466", UDim2.new(0.08, rpx(0), 
 tabs["Credits"] = createTab("Credits", "99243311837005", UDim2.new(0.08, rpx(0), 0.64, rpx(0)))
 
 local autoRebirthActive = false
-local autoTrainPowerActive = false
-local autoUnlockAreasActive = false
 local autoFarmTrophyActive = false
-local autoOpenEggsActive = false
 local autoBuyItemsActive = false
 local autoTrainSpeedActive = false
 local autoCollectOrbActive = false
@@ -2343,10 +1746,15 @@ local trainSpeedExpectedCFrame = CFrame.new(18.0236549, 7.54272556, -40.5097961,
 local trainSpeedPrecision = 0.001
 local trainSpeedHourlyModelName = "HourlyTreadmill_Active"
 local trainSpeedAdminModelName = "TreadmillAdminAbuse"
-local trainSpeedLoopConnection = nil
+local trainSpeedLoopActive = false
 local trainSpeedLastTime = 0
 local trainSpeedUpdateRemote = nil
 local trainSpeedConfig = nil
+local trainSpeedBasicConveyor = nil
+local trainSpeedFrozenRoot = nil
+local trainSpeedOriginalAnchored = nil
+local trainSpeedCurrentConveyor = nil
+local trainSpeedSessionId = 0
 
 local function getTrainSpeedRemote()
     if not trainSpeedUpdateRemote then
@@ -2391,8 +1799,13 @@ local function getCharacterParts()
 end
 
 local function findBasicTrainSpeedConveyor()
+    if trainSpeedBasicConveyor and trainSpeedBasicConveyor:IsDescendantOf(workspace) then
+        return trainSpeedBasicConveyor
+    end
+    trainSpeedBasicConveyor = nil
     for _, part in ipairs(workspace:GetDescendants()) do
         if part:IsA("BasePart") and part.Name == trainSpeedTargetName and trainSpeedCFrameEquals(part.CFrame, trainSpeedExpectedCFrame) then
+            trainSpeedBasicConveyor = part
             return part
         end
     end
@@ -2419,12 +1832,23 @@ local function getTrainSpeedCFrame(conveyor)
     return CFrame.new(position, position + conveyor.CFrame.LookVector)
 end
 
+local function freezeTrainSpeedRoot(hrp)
+    if trainSpeedFrozenRoot ~= hrp then
+        if trainSpeedFrozenRoot and trainSpeedFrozenRoot.Parent and trainSpeedOriginalAnchored ~= nil then
+            trainSpeedFrozenRoot.Anchored = trainSpeedOriginalAnchored
+        end
+        trainSpeedFrozenRoot = hrp
+        trainSpeedOriginalAnchored = hrp.Anchored
+    end
+    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    hrp.Anchored = true
+end
+
 local function stopTrainSpeedMod()
     autoTrainSpeedActive = false
-    if trainSpeedLoopConnection then
-        trainSpeedLoopConnection:Disconnect()
-        trainSpeedLoopConnection = nil
-    end
+    trainSpeedLoopActive = false
+    trainSpeedSessionId = trainSpeedSessionId + 1
     local char, hum, hrp = getCharacterParts()
     if char then
         char:SetAttribute("IsOnTreadmill", false)
@@ -2432,54 +1856,65 @@ local function stopTrainSpeedMod()
     if hum then
         hum.PlatformStand = false
     end
+    if trainSpeedFrozenRoot and trainSpeedFrozenRoot.Parent and trainSpeedOriginalAnchored ~= nil then
+        trainSpeedFrozenRoot.Anchored = trainSpeedOriginalAnchored
+    elseif hrp and trainSpeedOriginalAnchored ~= nil then
+        hrp.Anchored = trainSpeedOriginalAnchored
+    end
     if hrp then
         hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
     end
+    trainSpeedFrozenRoot = nil
+    trainSpeedOriginalAnchored = nil
+    trainSpeedCurrentConveyor = nil
 end
 
 local function startTrainSpeedMod()
-    if trainSpeedLoopConnection then
-        trainSpeedLoopConnection:Disconnect()
-        trainSpeedLoopConnection = nil
+    if trainSpeedLoopActive then
+        return
     end
     autoTrainSpeedActive = true
+    trainSpeedLoopActive = true
+    trainSpeedSessionId = trainSpeedSessionId + 1
+    local currentTrainSpeedSession = trainSpeedSessionId
     trainSpeedLastTime = 0
-    trainSpeedLoopConnection = RunService.Heartbeat:Connect(function()
-        if not autoTrainSpeedActive then
-            stopTrainSpeedMod()
-            return
-        end
-        local char, hum, hrp = getCharacterParts()
-        if not char or not hum or not hrp or hum.Health <= 0 then
-            return
-        end
-        local conveyor = getBestTrainSpeedConveyor()
-        if not conveyor then
-            return
-        end
-        char:SetAttribute("IsOnTreadmill", true)
-        hum.PlatformStand = false
-        hrp.CFrame = getTrainSpeedCFrame(conveyor)
-        hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
-        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-        local now = os.clock()
-        local waitTime = 0.2
-        local config = getTrainSpeedConfig()
-        if config and config.XP_TIME_BASED then
-            local baseXP = config.XP_TIME_BASED
-            if baseXP.MAX_COOLDOWN and baseXP.MIN_COOLDOWN then
-                waitTime = baseXP.MIN_COOLDOWN
+    task.spawn(function()
+        while autoTrainSpeedActive and trainSpeedSessionId == currentTrainSpeedSession do
+            local char, hum, hrp = getCharacterParts()
+            if char and hum and hrp and hum.Health > 0 then
+                local conveyor = getBestTrainSpeedConveyor()
+                if conveyor then
+                    char:SetAttribute("IsOnTreadmill", true)
+                    hum.PlatformStand = false
+                    if trainSpeedCurrentConveyor ~= conveyor then
+                        trainSpeedCurrentConveyor = conveyor
+                        hrp.CFrame = getTrainSpeedCFrame(conveyor)
+                    elseif not hrp.Anchored then
+                        hrp.CFrame = getTrainSpeedCFrame(conveyor)
+                    end
+                    freezeTrainSpeedRoot(hrp)
+                    local now = os.clock()
+                    local waitTime = 0.25
+                    local config = getTrainSpeedConfig()
+                    if config and config.XP_TIME_BASED and config.XP_TIME_BASED.MIN_COOLDOWN then
+                        waitTime = config.XP_TIME_BASED.MIN_COOLDOWN
+                    end
+                    if now - trainSpeedLastTime >= waitTime then
+                        trainSpeedLastTime = now
+                        local updateRemote = getTrainSpeedRemote()
+                        if updateRemote then
+                            pcall(function()
+                                updateRemote:FireServer("Walking")
+                            end)
+                        end
+                    end
+                end
             end
+            task.wait(0.35)
         end
-        if now - trainSpeedLastTime >= waitTime then
-            trainSpeedLastTime = now
-            local updateRemote = getTrainSpeedRemote()
-            if updateRemote then
-                pcall(function()
-                    updateRemote:FireServer("Walking")
-                end)
-            end
+        if trainSpeedSessionId == currentTrainSpeedSession then
+            trainSpeedLoopActive = false
         end
     end)
 end
@@ -2580,7 +2015,7 @@ createOption("Auto Farm Trophy", false, "Farm", function(state)
     end
 end)
 
-createWorldSelector("Farm", "TrophyFarmWorldSelector", "Select Area")
+createWorldSelector("Farm", "TrophyFarmWorldSelector", "Select Win Area")
 
 createCategory("Auto Buy", "Shop", "129977800846764")
 
@@ -3098,10 +2533,7 @@ end)
 
 local function stopAllScriptFeatures()
     autoRebirthActive = false
-    autoTrainPowerActive = false
-    autoUnlockAreasActive = false
     autoFarmTrophyActive = false
-    autoOpenEggsActive = false
     autoBuyItemsActive = false
     autoCollectOrbActive = false
     stopTrainSpeedMod()
