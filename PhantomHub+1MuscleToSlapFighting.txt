@@ -7,6 +7,7 @@ local VirtualUser = game:GetService("VirtualUser")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
 
 local BASE_VIEWPORT_SIZE = Vector2.new(1600, 720)
 
@@ -1751,6 +1752,14 @@ local autoBuyItemsActive = false
 local autoTrainSpeedActive = false
 local autoCollectOrbActive = false
 local collectOrbLoopActive = false
+local autoCollectSpecialKeyActive = false
+local collectSpecialKeyHeartbeatConnection = nil
+local collectSpecialKeyEventConnection = nil
+local collectSpecialKeyLastPosition = nil
+local collectSpecialKeyLastCollectTime = 0
+local collectSpecialKeyNotificationSystem = nil
+local collectSpecialKeySoundManager = nil
+local collectSpecialKeyRemote = nil
 
 
 local trainSpeedTargetName = "Conveyor"
@@ -1759,6 +1768,8 @@ local trainSpeedStartCFrame = CFrame.new(1.58338535, 6.85712814, 2.56417942, -1,
 local trainSpeedPrecision = 0.001
 local trainSpeedPullSpeed = 72
 local trainSpeedArriveDistance = 0.65
+local trainSpeedAreaMargin = 4
+local trainSpeedHeightMargin = 8
 local trainSpeedHourlyModelName = "HourlyTreadmill_Active"
 local trainSpeedAdminModelName = "TreadmillAdminAbuse"
 local trainSpeedLoopActive = false
@@ -1876,7 +1887,7 @@ local function pullTrainSpeedRoot(hrp, targetCFrame, deltaTime)
     local distance = direction.Magnitude
     if distance <= trainSpeedArriveDistance then
         hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
-        return
+        return true
     end
     local safeDelta = math.max(deltaTime, 0.03)
     local stepDistance = math.min(distance, trainSpeedPullSpeed * safeDelta)
@@ -1885,6 +1896,46 @@ local function pullTrainSpeedRoot(hrp, targetCFrame, deltaTime)
     hrp.CFrame = CFrame.new(newPosition, newPosition + targetCFrame.LookVector)
     local velocity = moveDirection * math.min(trainSpeedPullSpeed, distance / safeDelta)
     hrp.AssemblyLinearVelocity = Vector3.new(velocity.X, math.min(hrp.AssemblyLinearVelocity.Y, 0), velocity.Z)
+    return distance - stepDistance <= trainSpeedArriveDistance
+end
+
+local function getTrainSpeedAreaObject(conveyor)
+    local current = conveyor.Parent
+    while current and current ~= workspace do
+        if current:IsA("Model") and (current.Name == trainSpeedAdminModelName or current.Name == trainSpeedHourlyModelName) then
+            return current
+        end
+        current = current.Parent
+    end
+    current = conveyor.Parent
+    while current and current ~= workspace do
+        if current:IsA("Model") then
+            return current
+        end
+        current = current.Parent
+    end
+    return conveyor
+end
+
+local function getTrainSpeedAreaBounds(conveyor)
+    local areaObject = getTrainSpeedAreaObject(conveyor)
+    if areaObject and areaObject:IsA("Model") then
+        local success, boundingCFrame, boundingSize = pcall(function()
+            return areaObject:GetBoundingBox()
+        end)
+        if success and boundingCFrame and boundingSize then
+            return boundingCFrame, boundingSize
+        end
+    end
+    return conveyor.CFrame, conveyor.Size
+end
+
+local function isTrainSpeedInsideArea(hrp, conveyor)
+    local areaCFrame, areaSize = getTrainSpeedAreaBounds(conveyor)
+    local localPosition = areaCFrame:PointToObjectSpace(hrp.Position)
+    return math.abs(localPosition.X) <= areaSize.X * 0.5 + trainSpeedAreaMargin
+        and math.abs(localPosition.Z) <= areaSize.Z * 0.5 + trainSpeedAreaMargin
+        and math.abs(localPosition.Y) <= areaSize.Y * 0.5 + trainSpeedHeightMargin
 end
 
 local function stopTrainSpeedMod()
@@ -1921,6 +1972,7 @@ local function startTrainSpeedMod()
     trainSpeedSessionId = trainSpeedSessionId + 1
     local currentTrainSpeedSession = trainSpeedSessionId
     local trainSpeedStartDone = false
+    local trainSpeedReachedTarget = false
     local lastPullTime = os.clock()
     trainSpeedLastTime = 0
     task.spawn(function()
@@ -1931,6 +1983,7 @@ local function startTrainSpeedMod()
                 hum.PlatformStand = false
                 if not trainSpeedStartDone then
                     trainSpeedStartDone = true
+                    trainSpeedReachedTarget = false
                     trainSpeedCurrentConveyor = nil
                     teleportToTrainSpeedStart(hrp)
                     lastPullTime = os.clock()
@@ -1938,9 +1991,19 @@ local function startTrainSpeedMod()
                 else
                     local conveyor = getBestTrainSpeedConveyor()
                     if conveyor then
-                        trainSpeedCurrentConveyor = conveyor
+                        if trainSpeedCurrentConveyor ~= conveyor then
+                            trainSpeedCurrentConveyor = conveyor
+                            trainSpeedReachedTarget = false
+                        end
                         local now = os.clock()
-                        pullTrainSpeedRoot(hrp, getTrainSpeedCFrame(conveyor), now - lastPullTime)
+                        local targetCFrame = getTrainSpeedCFrame(conveyor)
+                        if not trainSpeedReachedTarget then
+                            trainSpeedReachedTarget = pullTrainSpeedRoot(hrp, targetCFrame, now - lastPullTime)
+                        elseif not isTrainSpeedInsideArea(hrp, conveyor) then
+                            trainSpeedReachedTarget = pullTrainSpeedRoot(hrp, targetCFrame, now - lastPullTime)
+                        else
+                            prepareTrainSpeedRoot(hrp)
+                        end
                         lastPullTime = now
                         local waitTime = 0.25
                         local config = getTrainSpeedConfig()
@@ -2007,6 +2070,164 @@ local function startCollectOrbLoop()
     end)
 end
 
+local function getCollectSpecialKeyNotificationSystem()
+    if not collectSpecialKeyNotificationSystem then
+        local notificationModule = ReplicatedStorage:FindFirstChild("NotificationSystem")
+        if notificationModule then
+            local success, notificationSystem = pcall(function()
+                return require(notificationModule)
+            end)
+            if success then
+                collectSpecialKeyNotificationSystem = notificationSystem
+            end
+        end
+    end
+    return collectSpecialKeyNotificationSystem
+end
+
+local function getCollectSpecialKeySoundManager()
+    if not collectSpecialKeySoundManager then
+        local soundModule = ReplicatedStorage:FindFirstChild("SoundManager")
+        if soundModule then
+            local success, soundManager = pcall(function()
+                return require(soundModule)
+            end)
+            if success then
+                collectSpecialKeySoundManager = soundManager
+            end
+        end
+    end
+    return collectSpecialKeySoundManager
+end
+
+local function getCollectSpecialKeyRemote()
+    if not collectSpecialKeyRemote then
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if remotes then
+            local remote = remotes:FindFirstChild("SpecialKeyEvent")
+            if remote then
+                collectSpecialKeyRemote = remote
+            end
+        end
+    end
+    return collectSpecialKeyRemote
+end
+
+local function showCollectSpecialKeyNotification(text, color, duration)
+    local notificationSystem = getCollectSpecialKeyNotificationSystem()
+    if notificationSystem then
+        pcall(function()
+            notificationSystem:ShowGeneralNotification(text, color, duration)
+        end)
+    end
+end
+
+local function playCollectSpecialKeySound(soundName)
+    local soundManager = getCollectSpecialKeySoundManager()
+    if soundManager then
+        pcall(function()
+            soundManager:Play(soundName)
+        end)
+    end
+end
+
+local function createCollectSpecialKeyEffect(position)
+    local effectPart = Instance.new("Part")
+    effectPart.Size = Vector3.new(1, 1, 1)
+    effectPart.Position = position
+    effectPart.Anchored = true
+    effectPart.CanCollide = false
+    effectPart.Transparency = 1
+    effectPart.Parent = workspace.Terrain
+
+    local particle = Instance.new("ParticleEmitter")
+    particle.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 50)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 200, 0)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 150, 0))
+    })
+    particle.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 1.5), NumberSequenceKeypoint.new(1, 0)})
+    particle.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.8, 0.3), NumberSequenceKeypoint.new(1, 1)})
+    particle.Lifetime = NumberRange.new(0.8, 1.5)
+    particle.Speed = NumberRange.new(10, 25)
+    particle.SpreadAngle = Vector2.new(360, 360)
+    particle.Rate = 0
+    particle.LightEmission = 1
+    particle.Parent = effectPart
+    particle:Emit(30)
+
+    local light = Instance.new("PointLight")
+    light.Color = Color3.fromRGB(255, 255, 100)
+    light.Brightness = 6
+    light.Range = 30
+    light.Parent = effectPart
+
+    task.delay(0.2, function()
+        TweenService:Create(light, TweenInfo.new(0.5), {Brightness = 0, Range = 0}):Play()
+    end)
+
+    Debris:AddItem(effectPart, 2)
+end
+
+local function stopCollectSpecialKeyLoop()
+    autoCollectSpecialKeyActive = false
+    collectSpecialKeyLastPosition = nil
+    if collectSpecialKeyHeartbeatConnection then
+        collectSpecialKeyHeartbeatConnection:Disconnect()
+        collectSpecialKeyHeartbeatConnection = nil
+    end
+    if collectSpecialKeyEventConnection then
+        collectSpecialKeyEventConnection:Disconnect()
+        collectSpecialKeyEventConnection = nil
+    end
+end
+
+local function startCollectSpecialKeyLoop()
+    autoCollectSpecialKeyActive = true
+    local specialKeyEvent = getCollectSpecialKeyRemote()
+    if specialKeyEvent and not collectSpecialKeyEventConnection then
+        collectSpecialKeyEventConnection = specialKeyEvent.OnClientEvent:Connect(function(data)
+            if not autoCollectSpecialKeyActive then
+                return
+            end
+            if type(data) ~= "table" then
+                return
+            end
+            local action = data.action
+            local position = data.position
+            if action == "spawn" and typeof(position) == "Vector3" then
+                collectSpecialKeyLastPosition = position
+                showCollectSpecialKeyNotification("Chave Dourada Encontrada!", Color3.fromRGB(255, 200, 0), 2)
+                playCollectSpecialKeySound("SPECIAL_KEY_NOTIF")
+            end
+        end)
+    end
+    if not collectSpecialKeyHeartbeatConnection then
+        collectSpecialKeyHeartbeatConnection = RunService.Heartbeat:Connect(function()
+            if not autoCollectSpecialKeyActive or not collectSpecialKeyLastPosition then
+                return
+            end
+            local char = Player.Character
+            if not char then
+                return
+            end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then
+                return
+            end
+            local now = tick()
+            if now - collectSpecialKeyLastCollectTime < 0.3 then
+                return
+            end
+            hrp.CFrame = CFrame.new(collectSpecialKeyLastPosition + Vector3.new(0, 2, 0)) * hrp.CFrame.Rotation
+            createCollectSpecialKeyEffect(collectSpecialKeyLastPosition)
+            showCollectSpecialKeyNotification("Chave Dourada Coletada!", Color3.fromRGB(80, 200, 50), 2.5)
+            collectSpecialKeyLastPosition = nil
+            collectSpecialKeyLastCollectTime = now
+        end)
+    end
+end
+
 createCategory("Main", "Progression", "99024336494762")
 
 createOption("Auto Rebirth", false, "Main", function(state)
@@ -2031,12 +2252,6 @@ createOption("Auto Train Speed", false, "Main", function(state)
     end
 end)
 
-createOption("Collect Orb", false, "Main", function(state)
-    autoCollectOrbActive = state
-    if state then
-        startCollectOrbLoop()
-    end
-end)
 
 createCategory("Farm", "Trophy Farm", "130626492867162")
 
@@ -2064,6 +2279,23 @@ createOption("Auto Farm Trophy", false, "Farm", function(state)
 end)
 
 createWorldSelector("Farm", "TrophyFarmWorldSelector", "Select Win Area")
+
+createCategory("Farm", "Collect Items", "84487893427781")
+
+createOption("Collect Orb", false, "Farm", function(state)
+    autoCollectOrbActive = state
+    if state then
+        startCollectOrbLoop()
+    end
+end)
+
+createOption("Collect Special Key", false, "Farm", function(state)
+    if state then
+        startCollectSpecialKeyLoop()
+    else
+        stopCollectSpecialKeyLoop()
+    end
+end)
 
 createCategory("Auto Buy", "Shop", "129977800846764")
 
@@ -2603,6 +2835,7 @@ Player.CharacterAdded:Connect(function()
     noclipParts = {}
     stopTrainSpeedMod()
     autoCollectOrbActive = false
+    collectSpecialKeyLastPosition = nil
 end)
 
 local function stopAllScriptFeatures()
@@ -2610,6 +2843,7 @@ local function stopAllScriptFeatures()
     autoFarmTrophyActive = false
     autoBuyItemsActive = false
     autoCollectOrbActive = false
+    stopCollectSpecialKeyLoop()
     stopTrainSpeedMod()
     isFlyActive = false
     noclipEnabled = false
