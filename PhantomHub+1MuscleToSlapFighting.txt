@@ -127,6 +127,9 @@ end
 
 local fileName = "Phantom_" .. tostring(Player.UserId) .. ".json"
 local savedSettings = {}
+local unsavedSettings = {
+    ["Enable Speed"] = true
+}
 
 if type(isfile) == "function" and isfile(fileName) then
     local success, data = pcall(function()
@@ -148,7 +151,10 @@ end
 local optionStates = {}
 
 local function createOptionState(name, initialValue)
-    if savedSettings[name] ~= nil then
+    if unsavedSettings[name] then
+        savedSettings[name] = nil
+        optionStates[name] = initialValue
+    elseif savedSettings[name] ~= nil then
         optionStates[name] = savedSettings[name]
     else
         optionStates[name] = initialValue
@@ -158,13 +164,17 @@ end
 
 local function setOptionState(name, value)
     optionStates[name] = value
-    savedSettings[name] = value
+    if unsavedSettings[name] then
+        savedSettings[name] = nil
+    else
+        savedSettings[name] = value
+    end
     saveSettings()
 end
 
 local function saveCurrentSettings()
     for name, value in pairs(optionStates) do
-        if name ~= "_debounce" then
+        if name ~= "_debounce" and not unsavedSettings[name] then
             savedSettings[name] = value
         end
     end
@@ -554,6 +564,8 @@ local tabs = {}
 local activeTab = "Main"
 local notificationTimers = {}
 local speedValue = 32
+local naturalWalkSpeed = nil
+local speedOverrideActive = false
 local flySpeed = 32
 local connectionStorage = {}
 local optionElementsMap = {}
@@ -1598,7 +1610,7 @@ local function createShopItemSelector(tabName, stateName, labelText)
         {name = "Auto Common", value = "Common"},
         {name = "Auto Uncommon", value = "Uncommon"},
         {name = "Auto Rare", value = "Rare"},
-        {name = "Auto Epic", value = "Mysterious"}
+        {name = "Auto Mysterious", value = "Mysterious"}
     }
     local optionControls = {}
 
@@ -1743,7 +1755,10 @@ local collectOrbLoopActive = false
 
 local trainSpeedTargetName = "Conveyor"
 local trainSpeedExpectedCFrame = CFrame.new(18.0236549, 7.54272556, -40.5097961, -1, 0, 0, 0, 1, 0, 0, 0, -1)
+local trainSpeedStartCFrame = CFrame.new(1.58338535, 6.85712814, 2.56417942, -1, 0, 0, 0, 1, 0, 0, 0, -1)
 local trainSpeedPrecision = 0.001
+local trainSpeedPullSpeed = 72
+local trainSpeedArriveDistance = 0.65
 local trainSpeedHourlyModelName = "HourlyTreadmill_Active"
 local trainSpeedAdminModelName = "TreadmillAdminAbuse"
 local trainSpeedLoopActive = false
@@ -1832,7 +1847,7 @@ local function getTrainSpeedCFrame(conveyor)
     return CFrame.new(position, position + conveyor.CFrame.LookVector)
 end
 
-local function freezeTrainSpeedRoot(hrp)
+local function prepareTrainSpeedRoot(hrp)
     if trainSpeedFrozenRoot ~= hrp then
         if trainSpeedFrozenRoot and trainSpeedFrozenRoot.Parent and trainSpeedOriginalAnchored ~= nil then
             trainSpeedFrozenRoot.Anchored = trainSpeedOriginalAnchored
@@ -1840,9 +1855,36 @@ local function freezeTrainSpeedRoot(hrp)
         trainSpeedFrozenRoot = hrp
         trainSpeedOriginalAnchored = hrp.Anchored
     end
+    if hrp.Anchored then
+        hrp.Anchored = false
+    end
+    hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+end
+
+local function teleportToTrainSpeedStart(hrp)
+    prepareTrainSpeedRoot(hrp)
+    hrp.CFrame = trainSpeedStartCFrame
     hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-    hrp.Anchored = true
+end
+
+local function pullTrainSpeedRoot(hrp, targetCFrame, deltaTime)
+    prepareTrainSpeedRoot(hrp)
+    local currentPosition = hrp.Position
+    local targetPosition = targetCFrame.Position
+    local direction = targetPosition - currentPosition
+    local distance = direction.Magnitude
+    if distance <= trainSpeedArriveDistance then
+        hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
+        return
+    end
+    local safeDelta = math.max(deltaTime, 0.03)
+    local stepDistance = math.min(distance, trainSpeedPullSpeed * safeDelta)
+    local moveDirection = direction.Unit
+    local newPosition = currentPosition + moveDirection * stepDistance
+    hrp.CFrame = CFrame.new(newPosition, newPosition + targetCFrame.LookVector)
+    local velocity = moveDirection * math.min(trainSpeedPullSpeed, distance / safeDelta)
+    hrp.AssemblyLinearVelocity = Vector3.new(velocity.X, math.min(hrp.AssemblyLinearVelocity.Y, 0), velocity.Z)
 end
 
 local function stopTrainSpeedMod()
@@ -1878,40 +1920,46 @@ local function startTrainSpeedMod()
     trainSpeedLoopActive = true
     trainSpeedSessionId = trainSpeedSessionId + 1
     local currentTrainSpeedSession = trainSpeedSessionId
+    local trainSpeedStartDone = false
+    local lastPullTime = os.clock()
     trainSpeedLastTime = 0
     task.spawn(function()
         while autoTrainSpeedActive and trainSpeedSessionId == currentTrainSpeedSession do
             local char, hum, hrp = getCharacterParts()
             if char and hum and hrp and hum.Health > 0 then
-                local conveyor = getBestTrainSpeedConveyor()
-                if conveyor then
-                    char:SetAttribute("IsOnTreadmill", true)
-                    hum.PlatformStand = false
-                    if trainSpeedCurrentConveyor ~= conveyor then
+                char:SetAttribute("IsOnTreadmill", true)
+                hum.PlatformStand = false
+                if not trainSpeedStartDone then
+                    trainSpeedStartDone = true
+                    trainSpeedCurrentConveyor = nil
+                    teleportToTrainSpeedStart(hrp)
+                    lastPullTime = os.clock()
+                    task.wait(0.2)
+                else
+                    local conveyor = getBestTrainSpeedConveyor()
+                    if conveyor then
                         trainSpeedCurrentConveyor = conveyor
-                        hrp.CFrame = getTrainSpeedCFrame(conveyor)
-                    elseif not hrp.Anchored then
-                        hrp.CFrame = getTrainSpeedCFrame(conveyor)
-                    end
-                    freezeTrainSpeedRoot(hrp)
-                    local now = os.clock()
-                    local waitTime = 0.25
-                    local config = getTrainSpeedConfig()
-                    if config and config.XP_TIME_BASED and config.XP_TIME_BASED.MIN_COOLDOWN then
-                        waitTime = config.XP_TIME_BASED.MIN_COOLDOWN
-                    end
-                    if now - trainSpeedLastTime >= waitTime then
-                        trainSpeedLastTime = now
-                        local updateRemote = getTrainSpeedRemote()
-                        if updateRemote then
-                            pcall(function()
-                                updateRemote:FireServer("Walking")
-                            end)
+                        local now = os.clock()
+                        pullTrainSpeedRoot(hrp, getTrainSpeedCFrame(conveyor), now - lastPullTime)
+                        lastPullTime = now
+                        local waitTime = 0.25
+                        local config = getTrainSpeedConfig()
+                        if config and config.XP_TIME_BASED and config.XP_TIME_BASED.MIN_COOLDOWN then
+                            waitTime = config.XP_TIME_BASED.MIN_COOLDOWN
+                        end
+                        if now - trainSpeedLastTime >= waitTime then
+                            trainSpeedLastTime = now
+                            local updateRemote = getTrainSpeedRemote()
+                            if updateRemote then
+                                pcall(function()
+                                    updateRemote:FireServer("Walking")
+                                end)
+                            end
                         end
                     end
                 end
             end
-            task.wait(0.35)
+            task.wait(0.03)
         end
         if trainSpeedSessionId == currentTrainSpeedSession then
             trainSpeedLoopActive = false
@@ -2115,8 +2163,19 @@ createOption("Anti AFK", false, "Config")
 createOption("Anti Cheat", false, "Config")
 createOption("Infinite Jump", false, "Config")
 createOption("Enable Speed", false, "Config", function(state)
+    local char = Player.Character
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
     if state then
+        if humanoid and not speedOverrideActive then
+            naturalWalkSpeed = humanoid.WalkSpeed
+        end
+        speedOverrideActive = true
         speedValue = optionStates["Speed"]
+    else
+        if humanoid and naturalWalkSpeed then
+            humanoid.WalkSpeed = naturalWalkSpeed
+        end
+        speedOverrideActive = false
     end
 end)
 createSlider("Speed", 1, 500, 32, "Config", function(value)
@@ -2291,7 +2350,22 @@ task.spawn(function()
         local char = LP.Character
         local humanoid = char and char:FindFirstChildOfClass("Humanoid")
         if humanoid then
-            humanoid.WalkSpeed = speedEnabled and speedValue or 28
+            if speedEnabled then
+                if not speedOverrideActive then
+                    naturalWalkSpeed = humanoid.WalkSpeed
+                    speedOverrideActive = true
+                end
+                humanoid.WalkSpeed = speedValue
+            else
+                if speedOverrideActive then
+                    speedOverrideActive = false
+                    if naturalWalkSpeed then
+                        humanoid.WalkSpeed = naturalWalkSpeed
+                    end
+                else
+                    naturalWalkSpeed = humanoid.WalkSpeed
+                end
+            end
         end
 
         if isFlyActive and bg and bv then
