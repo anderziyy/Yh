@@ -1780,6 +1780,7 @@ local trainSpeedBasicConveyor = nil
 local trainSpeedFrozenRoot = nil
 local trainSpeedOriginalAnchored = nil
 local trainSpeedCurrentConveyor = nil
+local trainSpeedCurrentArea = nil
 local trainSpeedSessionId = 0
 
 local function getTrainSpeedRemote()
@@ -1917,25 +1918,35 @@ local function getTrainSpeedAreaObject(conveyor)
     return conveyor
 end
 
-local function getTrainSpeedAreaBounds(conveyor)
+local function createTrainSpeedArea(conveyor)
     local areaObject = getTrainSpeedAreaObject(conveyor)
+    local areaCFrame = conveyor.CFrame
+    local areaSize = conveyor.Size
     if areaObject and areaObject:IsA("Model") then
         local success, boundingCFrame, boundingSize = pcall(function()
             return areaObject:GetBoundingBox()
         end)
         if success and boundingCFrame and boundingSize then
-            return boundingCFrame, boundingSize
+            areaCFrame = boundingCFrame
+            areaSize = boundingSize
         end
     end
-    return conveyor.CFrame, conveyor.Size
+    return {
+        conveyor = conveyor,
+        cframe = areaCFrame,
+        size = areaSize,
+        targetCFrame = getTrainSpeedCFrame(conveyor)
+    }
 end
 
-local function isTrainSpeedInsideArea(hrp, conveyor)
-    local areaCFrame, areaSize = getTrainSpeedAreaBounds(conveyor)
-    local localPosition = areaCFrame:PointToObjectSpace(hrp.Position)
-    return math.abs(localPosition.X) <= areaSize.X * 0.5 + trainSpeedAreaMargin
-        and math.abs(localPosition.Z) <= areaSize.Z * 0.5 + trainSpeedAreaMargin
-        and math.abs(localPosition.Y) <= areaSize.Y * 0.5 + trainSpeedHeightMargin
+local function isTrainSpeedInsideArea(hrp, area)
+    if not area then
+        return false
+    end
+    local localPosition = area.cframe:PointToObjectSpace(hrp.Position)
+    return math.abs(localPosition.X) <= area.size.X * 0.5 + trainSpeedAreaMargin
+        and math.abs(localPosition.Z) <= area.size.Z * 0.5 + trainSpeedAreaMargin
+        and math.abs(localPosition.Y) <= area.size.Y * 0.5 + trainSpeedHeightMargin
 end
 
 local function stopTrainSpeedMod()
@@ -1961,6 +1972,30 @@ local function stopTrainSpeedMod()
     trainSpeedFrozenRoot = nil
     trainSpeedOriginalAnchored = nil
     trainSpeedCurrentConveyor = nil
+    trainSpeedCurrentArea = nil
+end
+
+local function updateTrainSpeedTargetArea(conveyor)
+    if trainSpeedCurrentConveyor ~= conveyor or not trainSpeedCurrentArea then
+        trainSpeedCurrentConveyor = conveyor
+        trainSpeedCurrentArea = createTrainSpeedArea(conveyor)
+    end
+    return trainSpeedCurrentArea
+end
+
+local function pullTrainSpeedToArea(hrp, area, currentTrainSpeedSession)
+    local arrived = false
+    local lastPullTime = os.clock()
+    while autoTrainSpeedActive and trainSpeedSessionId == currentTrainSpeedSession and not arrived do
+        if not hrp.Parent then
+            return false
+        end
+        local now = os.clock()
+        arrived = pullTrainSpeedRoot(hrp, area.targetCFrame, now - lastPullTime)
+        lastPullTime = now
+        task.wait(0.03)
+    end
+    return arrived
 end
 
 local function startTrainSpeedMod()
@@ -1971,58 +2006,60 @@ local function startTrainSpeedMod()
     trainSpeedLoopActive = true
     trainSpeedSessionId = trainSpeedSessionId + 1
     local currentTrainSpeedSession = trainSpeedSessionId
-    local trainSpeedStartDone = false
-    local trainSpeedReachedTarget = false
-    local lastPullTime = os.clock()
     trainSpeedLastTime = 0
+
     task.spawn(function()
+        while autoTrainSpeedActive and trainSpeedSessionId == currentTrainSpeedSession do
+            local char, hum = getCharacterParts()
+            if char and hum and hum.Health > 0 then
+                char:SetAttribute("IsOnTreadmill", true)
+                local waitTime = 0.25
+                local config = getTrainSpeedConfig()
+                if config and config.XP_TIME_BASED and config.XP_TIME_BASED.MIN_COOLDOWN then
+                    waitTime = config.XP_TIME_BASED.MIN_COOLDOWN
+                end
+                local now = os.clock()
+                if now - trainSpeedLastTime >= waitTime then
+                    trainSpeedLastTime = now
+                    local updateRemote = getTrainSpeedRemote()
+                    if updateRemote then
+                        pcall(function()
+                            updateRemote:FireServer("Walking")
+                        end)
+                    end
+                end
+            end
+            task.wait(0.05)
+        end
+    end)
+
+    task.spawn(function()
+        local startTeleported = false
         while autoTrainSpeedActive and trainSpeedSessionId == currentTrainSpeedSession do
             local char, hum, hrp = getCharacterParts()
             if char and hum and hrp and hum.Health > 0 then
-                char:SetAttribute("IsOnTreadmill", true)
                 hum.PlatformStand = false
-                if not trainSpeedStartDone then
-                    trainSpeedStartDone = true
-                    trainSpeedReachedTarget = false
+                if not startTeleported then
+                    startTeleported = true
                     trainSpeedCurrentConveyor = nil
+                    trainSpeedCurrentArea = nil
                     teleportToTrainSpeedStart(hrp)
-                    lastPullTime = os.clock()
                     task.wait(0.2)
                 else
                     local conveyor = getBestTrainSpeedConveyor()
                     if conveyor then
-                        if trainSpeedCurrentConveyor ~= conveyor then
-                            trainSpeedCurrentConveyor = conveyor
-                            trainSpeedReachedTarget = false
-                        end
-                        local now = os.clock()
-                        local targetCFrame = getTrainSpeedCFrame(conveyor)
-                        if not trainSpeedReachedTarget then
-                            trainSpeedReachedTarget = pullTrainSpeedRoot(hrp, targetCFrame, now - lastPullTime)
-                        elseif not isTrainSpeedInsideArea(hrp, conveyor) then
-                            trainSpeedReachedTarget = pullTrainSpeedRoot(hrp, targetCFrame, now - lastPullTime)
-                        else
-                            prepareTrainSpeedRoot(hrp)
-                        end
-                        lastPullTime = now
-                        local waitTime = 0.25
-                        local config = getTrainSpeedConfig()
-                        if config and config.XP_TIME_BASED and config.XP_TIME_BASED.MIN_COOLDOWN then
-                            waitTime = config.XP_TIME_BASED.MIN_COOLDOWN
-                        end
-                        if now - trainSpeedLastTime >= waitTime then
-                            trainSpeedLastTime = now
-                            local updateRemote = getTrainSpeedRemote()
-                            if updateRemote then
-                                pcall(function()
-                                    updateRemote:FireServer("Walking")
-                                end)
+                        local area = updateTrainSpeedTargetArea(conveyor)
+                        if area then
+                            if not isTrainSpeedInsideArea(hrp, area) then
+                                pullTrainSpeedToArea(hrp, area, currentTrainSpeedSession)
                             end
                         end
                     end
+                    task.wait(0.45)
                 end
+            else
+                task.wait(0.35)
             end
-            task.wait(0.03)
         end
         if trainSpeedSessionId == currentTrainSpeedSession then
             trainSpeedLoopActive = false
