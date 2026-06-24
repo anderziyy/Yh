@@ -2334,27 +2334,19 @@ local autoFarmTrophyActive = false
 local autoOpenEggsActive = false
 local autoBuyItemsActive = false
 local autoTrainSpeedActive = false
+local autoCollectOrbActive = false
+local collectOrbLoopActive = false
 
 
 local trainSpeedTargetName = "Conveyor"
 local trainSpeedExpectedCFrame = CFrame.new(18.0236549, 7.54272556, -40.5097961, -1, 0, 0, 0, 1, 0, 0, 0, -1)
 local trainSpeedPrecision = 0.001
-local trainSpeedSpecialModelName = "HourlyTreadmill_Active"
+local trainSpeedHourlyModelName = "HourlyTreadmill_Active"
+local trainSpeedAdminModelName = "TreadmillAdminAbuse"
 local trainSpeedLoopConnection = nil
-local trainSpeedFollowConnection = nil
-local trainSpeedSpecialConnection = nil
-local trainSpeedSpecialFollowConnection = nil
 local trainSpeedLastTime = 0
-local trainSpeedTargetPart = nil
-local trainSpeedOriginalCFrame = nil
-local trainSpeedOriginalParent = nil
-local trainSpeedObjectToRemove = nil
-local trainSpeedGuiChildren = {}
-local trainSpeedReplica = nil
-local trainSpeedSpecialPart = nil
 local trainSpeedUpdateRemote = nil
 local trainSpeedConfig = nil
-local trainSpeedMoveBufferUntil = 0
 
 local function getTrainSpeedRemote()
     if not trainSpeedUpdateRemote then
@@ -2390,233 +2382,145 @@ local function trainSpeedCFrameEquals(cf1, cf2)
        and math.abs(r20 - s20) < trainSpeedPrecision and math.abs(r21 - s21) < trainSpeedPrecision and math.abs(r22 - s22) < trainSpeedPrecision
 end
 
-local function findTrainSpeedTargetPart()
-    trainSpeedTargetPart = nil
-    trainSpeedOriginalParent = nil
-    trainSpeedObjectToRemove = nil
-    trainSpeedReplica = nil
-    trainSpeedGuiChildren = {}
+local function getCharacterParts()
+    local char = Player.Character
+    if not char then return nil, nil, nil end
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    return char, hum, hrp
+end
 
+local function findBasicTrainSpeedConveyor()
     for _, part in ipairs(workspace:GetDescendants()) do
         if part:IsA("BasePart") and part.Name == trainSpeedTargetName and trainSpeedCFrameEquals(part.CFrame, trainSpeedExpectedCFrame) then
-            trainSpeedTargetPart = part
-            trainSpeedOriginalCFrame = part.CFrame
-            trainSpeedOriginalParent = part.Parent
-
-            for _, child in pairs(part:GetChildren()) do
-                if child:IsA("ScreenGui") or child:IsA("SurfaceGui") then
-                    table.insert(trainSpeedGuiChildren, {obj = child, parent = child.Parent})
-                    child.Parent = PlayerGui
-                end
-            end
-
-            if trainSpeedOriginalParent then
-                trainSpeedObjectToRemove = trainSpeedOriginalParent:FindFirstChild("TreadmillBillboard", true)
-            end
-            break
+            return part
         end
     end
+    return nil
 end
 
-local function makeTrainSpeedPartSafe(part)
-    if not part then return end
-    part.Anchored = true
-    part.CanCollide = false
-    part.CanTouch = false
-    part.CastShadow = false
-    part.LocalTransparencyModifier = 0
-    part:SetAttribute("IsConveyor", false)
+local function findModelTrainSpeedConveyor(modelName)
+    local model = workspace:FindFirstChild(modelName, true)
+    if not model then return nil end
+    local conveyor = model:FindFirstChild(trainSpeedTargetName, true)
+    if conveyor and conveyor:IsA("BasePart") then
+        return conveyor
+    end
+    return nil
 end
 
-local function isTrainSpeedCharacterMoving(hum, hrp)
-    if hum and hum.MoveDirection.Magnitude > 0.05 then
-        return true
-    end
-    if hrp then
-        local velocity = hrp.AssemblyLinearVelocity
-        local horizontalSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
-        return horizontalSpeed > 2
-    end
-    return false
+local function getBestTrainSpeedConveyor()
+    return findModelTrainSpeedConveyor(trainSpeedAdminModelName) or findModelTrainSpeedConveyor(trainSpeedHourlyModelName) or findBasicTrainSpeedConveyor()
 end
 
-local function getTrainSpeedPartCFrame(hrp, hum)
-    local yOffset = -4.5
-    if isTrainSpeedCharacterMoving(hum, hrp) or os.clock() < trainSpeedMoveBufferUntil then
-        yOffset = -10
-    end
-    local targetPosition = hrp.Position + Vector3.new(0, yOffset, 0)
-    return CFrame.new(targetPosition, targetPosition + hrp.CFrame.LookVector * 5)
-end
-
-local function createTrainSpeedReplica()
-    if not trainSpeedTargetPart or not trainSpeedOriginalParent then return end
-    trainSpeedReplica = trainSpeedTargetPart:Clone()
-    trainSpeedReplica.Parent = trainSpeedOriginalParent
-    trainSpeedReplica.CFrame = trainSpeedOriginalCFrame
-    trainSpeedReplica.CanCollide = true
-    trainSpeedReplica.CanTouch = true
-    if trainSpeedObjectToRemove then
-        local signCopy = trainSpeedObjectToRemove:Clone()
-        signCopy.Parent = trainSpeedReplica
-    end
-end
-
-local function restoreTrainSpeedPart(part, originalCFrame)
-    if not part or not originalCFrame or not trainSpeedOriginalParent then return end
-    part.Parent = trainSpeedOriginalParent
-    part.CFrame = originalCFrame
-    part.CanCollide = true
-    part.CanTouch = true
-    part:SetAttribute("IsConveyor", nil)
-    if trainSpeedObjectToRemove and not trainSpeedObjectToRemove.Parent then
-        trainSpeedObjectToRemove.Parent = trainSpeedOriginalParent
-    end
-    for _, info in pairs(trainSpeedGuiChildren) do
-        if info.obj and info.obj.Parent then
-            info.obj.Parent = part
-        end
-    end
-    trainSpeedGuiChildren = {}
-    if trainSpeedReplica then
-        trainSpeedReplica:Destroy()
-        trainSpeedReplica = nil
-    end
-end
-
-local function clearTrainSpeedSpecialPart()
-    if trainSpeedSpecialFollowConnection then
-        trainSpeedSpecialFollowConnection:Disconnect()
-        trainSpeedSpecialFollowConnection = nil
-    end
-    if trainSpeedSpecialPart then
-        trainSpeedSpecialPart:Destroy()
-        trainSpeedSpecialPart = nil
-    end
-end
-
-local function processTrainSpeedSpecialModel(model)
-    if not autoTrainSpeedActive or not model or not model:IsDescendantOf(workspace) then return end
-    local specialConveyor = model:FindFirstChild(trainSpeedTargetName, true)
-    local specialBillboard = model:FindFirstChild("TreadmillBillboard", true)
-    if specialBillboard then specialBillboard:Destroy() end
-    if not specialConveyor or not specialConveyor:IsA("BasePart") then return end
-    clearTrainSpeedSpecialPart()
-    makeTrainSpeedPartSafe(specialConveyor)
-    trainSpeedSpecialPart = specialConveyor
-    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    trainSpeedSpecialFollowConnection = RunService.Heartbeat:Connect(function()
-        if not autoTrainSpeedActive or not hrp or not hrp.Parent or not trainSpeedSpecialPart or not trainSpeedSpecialPart:IsDescendantOf(workspace) then
-            clearTrainSpeedSpecialPart()
-            return
-        end
-        local hum = Player.Character and Player.Character:FindFirstChildWhichIsA("Humanoid")
-        trainSpeedSpecialPart.CFrame = getTrainSpeedPartCFrame(hrp, hum)
-    end)
-    model.Destroying:Connect(clearTrainSpeedSpecialPart)
-end
-
-local function startTrainSpeedSpecialMonitoring()
-    if trainSpeedSpecialConnection then return end
-    trainSpeedSpecialConnection = RunService.Heartbeat:Connect(function()
-        if not autoTrainSpeedActive then
-            if trainSpeedSpecialConnection then
-                trainSpeedSpecialConnection:Disconnect()
-                trainSpeedSpecialConnection = nil
-            end
-            return
-        end
-        local found = workspace:FindFirstChild(trainSpeedSpecialModelName, true)
-        if found then
-            processTrainSpeedSpecialModel(found)
-        end
-    end)
+local function getTrainSpeedCFrame(conveyor)
+    local yOffset = (conveyor.Size.Y * 0.5) + 3
+    local position = conveyor.Position + conveyor.CFrame.UpVector * yOffset
+    return CFrame.new(position, position + conveyor.CFrame.LookVector)
 end
 
 local function stopTrainSpeedMod()
     autoTrainSpeedActive = false
-    if trainSpeedLoopConnection then trainSpeedLoopConnection:Disconnect() trainSpeedLoopConnection = nil end
-    if trainSpeedFollowConnection then trainSpeedFollowConnection:Disconnect() trainSpeedFollowConnection = nil end
-    if trainSpeedSpecialConnection then trainSpeedSpecialConnection:Disconnect() trainSpeedSpecialConnection = nil end
-    clearTrainSpeedSpecialPart()
-    local char = Player.Character
+    if trainSpeedLoopConnection then
+        trainSpeedLoopConnection:Disconnect()
+        trainSpeedLoopConnection = nil
+    end
+    local char, hum, hrp = getCharacterParts()
     if char then
         char:SetAttribute("IsOnTreadmill", false)
-        local hum = char:FindFirstChildWhichIsA("Humanoid")
-        if hum then hum.PlatformStand = false end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            local bodyPosition = hrp:FindFirstChild("BodyPosition")
-            if bodyPosition then bodyPosition:Destroy() end
-            hrp.Velocity = Vector3.new(0, hrp.Velocity.Y, 0)
-        end
     end
-    if trainSpeedTargetPart and trainSpeedOriginalCFrame and trainSpeedOriginalParent then
-        restoreTrainSpeedPart(trainSpeedTargetPart, trainSpeedOriginalCFrame)
+    if hum then
+        hum.PlatformStand = false
     end
-    trainSpeedTargetPart = nil
-    trainSpeedOriginalParent = nil
-    trainSpeedOriginalCFrame = nil
-    trainSpeedObjectToRemove = nil
+    if hrp then
+        hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    end
 end
 
 local function startTrainSpeedMod()
-    local char = Player.Character or Player.CharacterAdded:Wait()
-    local hum = char:WaitForChild("Humanoid", 10)
-    local hrp = char:WaitForChild("HumanoidRootPart", 10)
-    local updateRemote = getTrainSpeedRemote()
-    local config = getTrainSpeedConfig()
-    if not hum or not hrp or not updateRemote or not config or not config.XP_TIME_BASED then
-        stopTrainSpeedMod()
-        return
+    if trainSpeedLoopConnection then
+        trainSpeedLoopConnection:Disconnect()
+        trainSpeedLoopConnection = nil
     end
-    trainSpeedLastTime = os.clock()
     autoTrainSpeedActive = true
-    char:SetAttribute("IsOnTreadmill", true)
-    findTrainSpeedTargetPart()
-    if not trainSpeedTargetPart or not trainSpeedOriginalParent then
-        stopTrainSpeedMod()
-        return
-    end
-    createTrainSpeedReplica()
-    if trainSpeedObjectToRemove and trainSpeedObjectToRemove.Parent then
-        trainSpeedObjectToRemove.Parent = nil
-    end
-    makeTrainSpeedPartSafe(trainSpeedTargetPart)
-    local fixedPosition = hrp.Position
-    trainSpeedMoveBufferUntil = 0
-    startTrainSpeedSpecialMonitoring()
+    trainSpeedLastTime = 0
     trainSpeedLoopConnection = RunService.Heartbeat:Connect(function()
-        if not autoTrainSpeedActive or not hum or hum.Health <= 0 or not char or not char.Parent then
+        if not autoTrainSpeedActive then
             stopTrainSpeedMod()
             return
         end
-        if isTrainSpeedCharacterMoving(hum, hrp) then
-            fixedPosition = hrp.Position
-            trainSpeedMoveBufferUntil = os.clock() + 0.3
-            trainSpeedLastTime = os.clock()
-            updateRemote:FireServer("Walking")
+        local char, hum, hrp = getCharacterParts()
+        if not char or not hum or not hrp or hum.Health <= 0 then
             return
         end
-        if os.clock() < trainSpeedMoveBufferUntil then
-            fixedPosition = hrp.Position
+        local conveyor = getBestTrainSpeedConveyor()
+        if not conveyor then
             return
         end
+        char:SetAttribute("IsOnTreadmill", true)
+        hum.PlatformStand = false
+        hrp.CFrame = getTrainSpeedCFrame(conveyor)
+        hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
         local now = os.clock()
-        local baseXP = config.XP_TIME_BASED
-        local simulatedSpeed = 1
-        local waitTime = baseXP.MAX_COOLDOWN - simulatedSpeed * (baseXP.MAX_COOLDOWN - baseXP.MIN_COOLDOWN)
-        local offset = math.sin(now * 2.5) * 0.03
-        hrp.Position = Vector3.new(fixedPosition.X + offset, hrp.Position.Y, fixedPosition.Z)
-        if waitTime <= (now - trainSpeedLastTime) then
+        local waitTime = 0.2
+        local config = getTrainSpeedConfig()
+        if config and config.XP_TIME_BASED then
+            local baseXP = config.XP_TIME_BASED
+            if baseXP.MAX_COOLDOWN and baseXP.MIN_COOLDOWN then
+                waitTime = baseXP.MIN_COOLDOWN
+            end
+        end
+        if now - trainSpeedLastTime >= waitTime then
             trainSpeedLastTime = now
-            updateRemote:FireServer("Walking")
+            local updateRemote = getTrainSpeedRemote()
+            if updateRemote then
+                pcall(function()
+                    updateRemote:FireServer("Walking")
+                end)
+            end
         end
     end)
-    trainSpeedFollowConnection = RunService.Heartbeat:Connect(function()
-        if not autoTrainSpeedActive or not hrp or not hrp.Parent or not trainSpeedTargetPart then return end
-        trainSpeedTargetPart.CFrame = getTrainSpeedPartCFrame(hrp, hum)
+end
+
+local function getCollectOrbPart(orb)
+    if orb:IsA("BasePart") then
+        return orb
+    end
+    return orb:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function startCollectOrbLoop()
+    if collectOrbLoopActive then
+        return
+    end
+    collectOrbLoopActive = true
+    task.spawn(function()
+        while autoCollectOrbActive do
+            local _, hum, hrp = getCharacterParts()
+            if hum and hrp and hum.Health > 0 then
+                local foundOrb = false
+                for _, orb in ipairs(workspace:GetDescendants()) do
+                    if not autoCollectOrbActive then break end
+                    if orb.Name == "CollectibleOrb" then
+                        local orbPart = getCollectOrbPart(orb)
+                        if orbPart and orbPart:IsDescendantOf(workspace) then
+                            foundOrb = true
+                            local position = orbPart.Position + Vector3.new(0, 2.5, 0)
+                            hrp.CFrame = CFrame.new(position, position + hrp.CFrame.LookVector)
+                            task.wait(0.12)
+                        end
+                    end
+                end
+                if not foundOrb then
+                    task.wait(0.25)
+                end
+            else
+                task.wait(0.5)
+            end
+        end
+        collectOrbLoopActive = false
     end)
 end
 
@@ -2638,10 +2542,16 @@ end)
 
 createOption("Auto Train Speed", false, "Main", function(state)
     if state then
-        autoTrainSpeedActive = true
         task.spawn(startTrainSpeedMod)
     else
         stopTrainSpeedMod()
+    end
+end)
+
+createOption("Collect Orb", false, "Main", function(state)
+    autoCollectOrbActive = state
+    if state then
+        startCollectOrbLoop()
     end
 end)
 
@@ -3183,6 +3093,7 @@ Player.CharacterAdded:Connect(function()
     bv = nil
     noclipParts = {}
     stopTrainSpeedMod()
+    autoCollectOrbActive = false
 end)
 
 local function stopAllScriptFeatures()
@@ -3192,6 +3103,7 @@ local function stopAllScriptFeatures()
     autoFarmTrophyActive = false
     autoOpenEggsActive = false
     autoBuyItemsActive = false
+    autoCollectOrbActive = false
     stopTrainSpeedMod()
     isFlyActive = false
     noclipEnabled = false
