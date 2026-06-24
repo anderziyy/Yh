@@ -2411,9 +2411,16 @@ createWorldSelector("Farm", "TrophyFarmWorldSelector", "Select World")
 
 createCategory("Auto Buy", "Shop", "129977800846764")
 
-local function hideNotEnoughWinsLabels()
+local blockedShopNotificationTexts = {
+    ["Not enough wins"] = true,
+    ["Shop not active"] = true
+}
+
+local function hideShopNotificationLabels()
     for _, descendant in ipairs(PlayerGui:GetDescendants()) do
-        if descendant:IsA("TextLabel") and descendant.Name == "Text" and descendant.Text == "Not enough wins" then
+        if descendant.Name == "GeneralNotificationFrame" then
+            pcall(function() descendant:Destroy() end)
+        elseif descendant:IsA("TextLabel") and descendant.Name == "Text" and blockedShopNotificationTexts[descendant.Text] then
             local color = descendant.TextColor3
             if color.R > 0.8 and color.G < 0.3 and color.B < 0.3 then
                 pcall(function() descendant:Destroy() end)
@@ -2422,12 +2429,32 @@ local function hideNotEnoughWinsLabels()
     end
 end
 
+PlayerGui.DescendantAdded:Connect(function(descendant)
+    task.defer(function()
+        if descendant.Name == "GeneralNotificationFrame" then
+            pcall(function() descendant:Destroy() end)
+        elseif descendant:IsA("TextLabel") and descendant.Name == "Text" and blockedShopNotificationTexts[descendant.Text] then
+            local color = descendant.TextColor3
+            if color.R > 0.8 and color.G < 0.3 and color.B < 0.3 then
+                pcall(function() descendant:Destroy() end)
+            end
+        end
+    end)
+end)
+
+task.spawn(function()
+    while ScreenGui.Parent do
+        hideShopNotificationLabels()
+        task.wait(0.05)
+    end
+end)
+
 createOption("Auto Buy Items", false, "Auto Buy", function(state)
     autoBuyItemsActive = state
     if state then
         task.spawn(function()
             while autoBuyItemsActive do
-                hideNotEnoughWinsLabels()
+                hideShopNotificationLabels()
                 task.wait(0.05)
             end
         end)
