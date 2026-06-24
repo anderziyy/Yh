@@ -1,0 +1,253 @@
+-- Serviços
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- 📡 LIGAÇÕES EXATAS DO JOGO (dos seus scripts)
+local NotificationSystem = require(ReplicatedStorage:WaitForChild("NotificationSystem"))
+local SoundManager = require(ReplicatedStorage:WaitForChild("SoundManager"))
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local SpecialKeyEvent = Remotes:WaitForChild("SpecialKeyEvent")
+local LightningAssets = ReplicatedStorage:FindFirstChild("Ligtning") -- nome igual no código original
+
+-- ⚙️ ESTADO DO SCRIPT
+local AutoGoldenAtivo = false
+local ConexaoPrincipal = nil
+local UltimaPosicaoChave = nil
+local CooldownColeta = 0 -- igual ao tempo do jogo: 0.3s
+
+-- 🎨 INTERFACE DO PAINEL
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoGoldenKey_Panel"
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder = 99999
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+-- Botão flutuante
+local BotaoAbrir = Instance.new("TextButton")
+BotaoAbrir.Size = UDim2.new(0,50,0,50)
+BotaoAbrir.Position = UDim2.new(0.02,0,0.40,0)
+BotaoAbrir.BackgroundColor3 = Color3.fromRGB(30,25,10)
+BotaoAbrir.BorderSizePixel = 0
+BotaoAbrir.Text = "🗝️"
+BotaoAbrir.Font = Enum.Font.GothamBlack
+BotaoAbrir.TextSize = 22
+BotaoAbrir.Parent = ScreenGui
+Instance.new("UICorner",BotaoAbrir).CornerRadius = UDim.new(0,10)
+local Borda = Instance.new("UIStroke",BotaoAbrir)
+Borda.Color = Color3.fromRGB(255,200,0)
+Borda.Thickness = 1.5
+
+-- Menu Principal
+local Menu = Instance.new("Frame")
+Menu.Size = UDim2.new(0,270,0,130)
+Menu.Position = UDim2.new(0.5,0,0.5,0)
+Menu.AnchorPoint = Vector2.new(0.5,0.5)
+Menu.BackgroundColor3 = Color3.fromRGB(18,16,10)
+Menu.BorderSizePixel = 0
+Menu.Visible = false
+Menu.Active = true
+Menu.Parent = ScreenGui
+Instance.new("UICorner",Menu).CornerRadius = UDim.new(0,12)
+local BordaMenu = Instance.new("UIStroke",Menu)
+BordaMenu.Color = Color3.fromRGB(255,210,0)
+BordaMenu.Thickness = 1.6
+
+local Titulo = Instance.new("TextLabel")
+Titulo.Size = UDim2.new(1,-35,0,32)
+Titulo.Position = UDim2.new(0,10,0,5)
+Titulo.BackgroundTransparency = 1
+Titulo.Text = "🗝️ AUTO CHAVE DOURADA"
+Titulo.Font = Enum.Font.GothamBold
+Titulo.TextSize = 15
+Titulo.TextColor3 = Color3.fromRGB(255,220,50)
+Titulo.Parent = Menu
+
+local FecharBtn = Instance.new("TextButton")
+FecharBtn.Size = UDim2.new(0,22,0,22)
+FecharBtn.Position = UDim2.new(1,-28,0,6)
+FecharBtn.BackgroundColor3 = Color3.fromRGB(160,30,30)
+FecharBtn.Text = "✕"
+FecharBtn.Font = Enum.Font.GothamBold
+FecharBtn.TextSize = 12
+FecharBtn.TextColor3 = Color3.new(1,1,1)
+FecharBtn.Parent = Menu
+Instance.new("UICorner",FecharBtn).CornerRadius = UDim.new(0,5)
+
+local ToggleAuto = Instance.new("TextButton")
+ToggleAuto.Size = UDim2.new(0.82,0,0,44)
+ToggleAuto.Position = UDim2.new(0.09,0,0.38,0)
+ToggleAuto.BackgroundColor3 = Color3.fromRGB(45,42,30)
+ToggleAuto.Text = "🔘  DESATIVADO"
+ToggleAuto.Font = Enum.Font.GothamBold
+ToggleAuto.TextSize = 14
+ToggleAuto.TextColor3 = Color3.fromRGB(220,220,180)
+ToggleAuto.Parent = Menu
+Instance.new("UICorner",ToggleAuto).CornerRadius = UDim.new(0,8)
+
+local InfoStatus = Instance.new("TextLabel")
+InfoStatus.Size = UDim2.new(1,0,0,18)
+InfoStatus.Position = UDim2.new(0,0,0.83,0)
+InfoStatus.BackgroundTransparency = 1
+InfoStatus.Text = "⏳ Aguardando notificação de chave..."
+InfoStatus.Font = Enum.Font.Gotham
+InfoStatus.TextSize = 11
+InfoStatus.TextColor3 = Color3.fromRGB(160,150,120)
+InfoStatus.Parent = Menu
+
+-- 🖱️ Arrastar botão
+local Arrastando = false
+local DifArrasto = Vector2.zero
+BotaoAbrir.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then
+        Arrastando = true
+        DifArrasto = Vector2.new(i.Position.X,i.Position.Y) - BotaoAbrir.AbsolutePosition
+    end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if Arrastando and i.UserInputType == Enum.UserInputType.MouseMovement then
+        local p = Vector2.new(i.Position.X,i.Position.Y) - DifArrasto
+        BotaoAbrir.Position = UDim2.new(0,p.X,0,p.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then Arrastando = false end
+end)
+
+-- Abrir/Fechar menu
+local MenuAberto = false
+local function AlternarMenu()
+    if Arrastando then return end
+    MenuAberto = not MenuAberto
+    if MenuAberto then
+        Menu.Visible = true
+        Menu.Size = UDim2.new(0,200,0,90)
+        Menu.BackgroundTransparency = 1
+        TweenService:Create(Menu,TweenInfo.new(.22),{Size=UDim2.new(0,270,0,130),BackgroundTransparency=0}):Play()
+    else
+        TweenService:Create(Menu,TweenInfo.new(.18),{Size=UDim2.new(0,200,0,90),BackgroundTransparency=1}):Play()
+        task.delay(.18,function() Menu.Visible = false end)
+    end
+end
+BotaoAbrir.MouseButton1Click:Connect(AlternarMenu)
+FecharBtn.MouseButton1Click:Connect(AlternarMenu)
+
+-- ✨ EFEITOS ORIGINAIS (copiados exatamente dos seus scripts)
+local function EfeitoColeta(posicao)
+    local PartEfeito = Instance.new("Part")
+    PartEfeito.Size = Vector3.new(1,1,1)
+    PartEfeito.Position = posicao
+    PartEfeito.Anchored = true
+    PartEfeito.CanCollide = false
+    PartEfeito.Transparency = 1
+    PartEfeito.Parent = workspace.Terrain
+
+    local Particula = Instance.new("ParticleEmitter")
+    Particula.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255,255,50)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255,200,0)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255,150,0))
+    })
+    Particula.Size = NumberSequence.new({NumberSequenceKeypoint.new(0,1.5), NumberSequenceKeypoint.new(1,0)})
+    Particula.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0), NumberSequenceKeypoint.new(0.8,0.3), NumberSequenceKeypoint.new(1,1)})
+    Particula.Lifetime = NumberRange.new(0.8,1.5)
+    Particula.Speed = NumberRange.new(10,25)
+    Particula.SpreadAngle = Vector2.new(360,360)
+    Particula.Rate = 0
+    Particula.LightEmission = 1
+    Particula.Parent = PartEfeito
+    Particula:Emit(30)
+
+    local Luz = Instance.new("PointLight")
+    Luz.Color = Color3.fromRGB(255,255,100)
+    Luz.Brightness = 6
+    Luz.Range = 30
+    Luz.Parent = PartEfeito
+
+    task.delay(0.2, function()
+        TweenService:Create(Luz, TweenInfo.new(0.5), {Brightness=0, Range=0}):Play()
+    end)
+
+    Debris:AddItem(PartEfeito, 2)
+end
+
+-- 📡 ESCUTA QUANDO CHAVE APARECE — IGUAL O CLIENTE ORIGINAL
+SpecialKeyEvent.OnClientEvent:Connect(function(Dados)
+    if type(Dados) ~= "table" then return end
+    local Acao = Dados.action
+    local Posicao = Dados.position
+
+    if Acao == "spawn" and typeof(Posicao) == "Vector3" then
+        UltimaPosicaoChave = Posicao
+        InfoStatus.Text = "🟡 CHAVE DOURADA DETECTADA!"
+        -- Reproduz aviso igual jogo
+        NotificationSystem:ShowGeneralNotification("Chave Dourada Encontrada!", Color3.fromRGB(255,200,0), 2)
+        SoundManager:Play("SPECIAL_KEY_NOTIF")
+    end
+end)
+
+-- 🚀 LÓGICA PRINCIPAL: TELETRANSPORTE + COLETA
+local function LoopAutoColetar()
+    ConexaoPrincipal = RunService.Heartbeat:Connect(function()
+        if not AutoGoldenAtivo then return end
+        if not UltimaPosicaoChave then return end
+
+        local Personagem = LocalPlayer.Character
+        if not Personagem then return end
+        local HRP = Personagem:FindFirstChild("HumanoidRootPart")
+        if not HRP then return end
+
+        local Agora = tick()
+        -- Respeita o tempo mínimo do jogo
+        if Agora - CooldownColeta < 0.3 then return end
+
+        -- ✅ TELETRANSPORTE PARA CIMA DA CHAVE
+        HRP.CFrame = CFrame.new(UltimaPosicaoChave + Vector3.new(0, 2, 0)) * HRP.CFrame.Rotation
+
+        -- ✅ Efeito visual EXATO do jogo
+        EfeitoColeta(UltimaPosicaoChave)
+
+        -- ✅ Notificação de sucesso
+        NotificationSystem:ShowGeneralNotification("✅ CHAVE DOURADA COLETADA!", Color3.fromRGB(80,200,50), 2.5)
+        InfoStatus.Text = "✅ Coletada — aguardando próxima..."
+
+        -- Limpa para buscar nova
+        UltimaPosicaoChave = nil
+        CooldownColeta = Agora
+    end)
+end
+
+-- 🔘 LIGA / DESLIGA
+ToggleAuto.MouseButton1Click:Connect(function()
+    AutoGoldenAtivo = not AutoGoldenAtivo
+    if AutoGoldenAtivo then
+        ToggleAuto.Text = "🟢  ATIVO — BUSCANDO"
+        ToggleAuto.BackgroundColor3 = Color3.fromRGB(40,90,40)
+        Borda.Color = Color3.fromRGB(80,255,120)
+        InfoStatus.Text = "🔍 Escutando aparecimento..."
+        LoopAutoColetar()
+    else
+        ToggleAuto.Text = "🔘  DESATIVADO"
+        ToggleAuto.BackgroundColor3 = Color3.fromRGB(45,42,30)
+        Borda.Color = Color3.fromRGB(255,200,0)
+        InfoStatus.Text = "⏳ Aguardando ativação..."
+        if ConexaoPrincipal then ConexaoPrincipal:Disconnect() ConexaoPrincipal = nil end
+    end
+end)
+
+-- 🔄 Reinicia ao renascer
+LocalPlayer.CharacterAdded:Connect(function()
+    UltimaPosicaoChave = nil
+end)
+
+-- ⌨️ Atalho teclado: INSERIR
+UserInputService.InputBegan:Connect(function(i,g)
+    if g then return end
+    if i.KeyCode == Enum.KeyCode.Insert then AlternarMenu() end
+end)
