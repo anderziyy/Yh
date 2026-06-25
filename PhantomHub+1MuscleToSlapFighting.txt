@@ -565,8 +565,9 @@ local tabs = {}
 local activeTab = "Main"
 local notificationTimers = {}
 local speedValue = 32
-local naturalWalkSpeed = nil
 local speedOverrideActive = false
+local speedLockConnection = nil
+local speedLockedHumanoid = nil
 local flySpeed = 32
 local connectionStorage = {}
 local optionElementsMap = {}
@@ -1949,8 +1950,10 @@ local function isTrainSpeedInsideArea(hrp, area)
         and math.abs(localPosition.Y) <= area.size.Y * 0.5 + trainSpeedHeightMargin
 end
 
-local function stopTrainSpeedMod()
-    autoTrainSpeedActive = false
+local function stopTrainSpeedMod(keepActive)
+    if not keepActive then
+        autoTrainSpeedActive = false
+    end
     trainSpeedLoopActive = false
     trainSpeedSessionId = trainSpeedSessionId + 1
     local char, hum, hrp = getCharacterParts()
@@ -2422,6 +2425,54 @@ end)
 
 createShopItemSelector("Auto Buy", "ShopItemSelector", "Select Items")
 
+local function disconnectSpeedLock()
+    if speedLockConnection then
+        speedLockConnection:Disconnect()
+        speedLockConnection = nil
+    end
+    speedLockedHumanoid = nil
+end
+
+local function applySpeedLockToHumanoid(humanoid)
+    if not humanoid then
+        return
+    end
+    disconnectSpeedLock()
+    speedLockedHumanoid = humanoid
+    humanoid.WalkSpeed = speedValue
+    speedLockConnection = humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+        if not speedOverrideActive or speedLockedHumanoid ~= humanoid then
+            return
+        end
+        if math.abs(humanoid.WalkSpeed - speedValue) > 0.01 then
+            humanoid.WalkSpeed = speedValue
+        end
+    end)
+end
+
+local function activateSpeedLock()
+    speedOverrideActive = true
+    local char = Player.Character
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        applySpeedLockToHumanoid(humanoid)
+    end
+end
+
+local function deactivateSpeedLock()
+    speedOverrideActive = false
+    disconnectSpeedLock()
+end
+
+local function updateSpeedLockValue(value)
+    speedValue = value
+    if speedOverrideActive and speedLockedHumanoid and speedLockedHumanoid.Parent then
+        speedLockedHumanoid.WalkSpeed = speedValue
+    elseif speedOverrideActive then
+        activateSpeedLock()
+    end
+end
+
 createCategory("Config", "Player", "102791662357524")
 
 createSpecialButton("Auto Rejoin", "Config", function()
@@ -2432,23 +2483,15 @@ createOption("Anti AFK", false, "Config")
 createOption("Anti Cheat", false, "Config")
 createOption("Infinite Jump", false, "Config")
 createOption("Enable Speed", false, "Config", function(state)
-    local char = Player.Character
-    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
     if state then
-        if humanoid and not speedOverrideActive then
-            naturalWalkSpeed = humanoid.WalkSpeed
-        end
-        speedOverrideActive = true
-        speedValue = optionStates["Speed"]
+        updateSpeedLockValue(optionStates["Speed"] or speedValue)
+        activateSpeedLock()
     else
-        if humanoid and naturalWalkSpeed then
-            humanoid.WalkSpeed = naturalWalkSpeed
-        end
-        speedOverrideActive = false
+        deactivateSpeedLock()
     end
 end)
 createSlider("Speed", 1, 500, 32, "Config", function(value)
-    speedValue = value
+    updateSpeedLockValue(value)
 end)
 createOption("Fly", false, "Config")
 createSlider("Fly Speed", 1, 500, 32, "Config", function(value)
@@ -2618,23 +2661,14 @@ task.spawn(function()
         if type(speedEnabled) == "function" then speedEnabled = speedEnabled() end
         local char = LP.Character
         local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            if speedEnabled then
-                if not speedOverrideActive then
-                    naturalWalkSpeed = humanoid.WalkSpeed
-                    speedOverrideActive = true
-                end
+        if humanoid and speedEnabled then
+            if not speedOverrideActive or speedLockedHumanoid ~= humanoid then
+                activateSpeedLock()
+            elseif math.abs(humanoid.WalkSpeed - speedValue) > 0.01 then
                 humanoid.WalkSpeed = speedValue
-            else
-                if speedOverrideActive then
-                    speedOverrideActive = false
-                    if naturalWalkSpeed then
-                        humanoid.WalkSpeed = naturalWalkSpeed
-                    end
-                else
-                    naturalWalkSpeed = humanoid.WalkSpeed
-                end
             end
+        elseif speedOverrideActive and not speedEnabled then
+            deactivateSpeedLock()
         end
 
         if isFlyActive and bg and bv then
@@ -2870,7 +2904,24 @@ Player.CharacterAdded:Connect(function()
     bg = nil
     bv = nil
     noclipParts = {}
-    stopTrainSpeedMod()
+    local trainSpeedShouldRestart = optionStates["Auto Train Speed"] == true or autoTrainSpeedActive
+    stopTrainSpeedMod(trainSpeedShouldRestart)
+    if trainSpeedShouldRestart then
+        task.delay(0.6, function()
+            if optionStates["Auto Train Speed"] == true then
+                startTrainSpeedMod()
+            end
+        end)
+    end
+    if optionStates["Enable Speed"] == true then
+        task.delay(0.15, function()
+            if optionStates["Enable Speed"] == true then
+                activateSpeedLock()
+            end
+        end)
+    else
+        deactivateSpeedLock()
+    end
     autoCollectOrbActive = false
     collectSpecialKeyLastPosition = nil
 end)
@@ -2882,6 +2933,7 @@ local function stopAllScriptFeatures()
     autoCollectOrbActive = false
     stopCollectSpecialKeyLoop()
     stopTrainSpeedMod()
+    deactivateSpeedLock()
     isFlyActive = false
     noclipEnabled = false
     getgenv().ShiftLockEnabled = false
